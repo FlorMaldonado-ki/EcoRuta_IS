@@ -2,8 +2,14 @@
 /** Limitación de intentos (RNF-11). El bloqueo tras 5 fallos vive en la BD (auth.service). */
 const { rateLimit } = require('express-rate-limit');
 
-const respuesta = (message) => (_req, res) =>
-  res.status(429).json({ error: 'DEMASIADOS_INTENTOS', message });
+// Si el cuerpo aún no se leyó (p. ej. el archivo del registro), se consume antes de
+// responder: Android corta la conexión si el servidor contesta a mitad de la subida
+// y la app solo vería "No se pudo conectar" en lugar del 429.
+const respuesta = (message) => (req, res) => {
+  const enviar = () => res.status(429).json({ error: 'DEMASIADOS_INTENTOS', message });
+  if (req.readableEnded) return enviar();
+  req.once('end', enviar).once('error', enviar).resume();
+};
 
 const base = { standardHeaders: 'draft-7', legacyHeaders: false };
 
