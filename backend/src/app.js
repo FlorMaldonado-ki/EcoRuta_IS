@@ -19,7 +19,15 @@ const app = express();
 app.set('trust proxy', 1); // Render está detrás de un proxy: IP real para el rate limit
 app.disable('x-powered-by');
 
-app.use(helmet()); // cabeceras seguras (RNF-10)
+// Cabeceras seguras (RNF-10). En desarrollo se quita "upgrade-insecure-requests" de la CSP:
+// obliga al navegador a enviar el formulario de nueva contraseña por https y, como el
+// backend local solo habla http (p. ej. http://10.0.2.2:3000 en el emulador), el botón
+// "Guardar contraseña" no hacía nada. En producción (Render, con https) se conserva.
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: { upgradeInsecureRequests: env.isProd ? [] : null },
+  },
+}));
 app.use(cors({
   // La app nativa no envía Origin, así que no le afecta. Expo Web sí: se limita a CORS_ORIGINS.
   origin: (origin, cb) => cb(null, !origin || env.corsOrigins.includes(origin) || (!env.isProd && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))),
