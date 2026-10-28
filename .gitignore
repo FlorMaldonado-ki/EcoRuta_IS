@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # dependencies
@@ -15,9 +16,9 @@ expo-env.d.ts
 *.jks
 *.p8
 *.p12
+
 *.key
 *.mobileprovision
-
 # Metro
 .metro-health-check*
 
@@ -39,3 +40,15 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+=======
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+backend/uploads/
+*.bak
+subir_a_github.bat
+subir_log.txt
+>>>>>>> 384d846819ac9b362efae01c68e846ddb3482e9c

@@ -1,0 +1,52 @@
+# Blueprint de Render: despliega la API conectada a Neon.
+# Render > New > Blueprint > selecciona este repositorio. Pedirá los valores marcados con sync: false.
+services:
+  - type: web
+    name: ecoruta-api
+    runtime: node
+    plan: free
+    region: ohio            # mismo lugar que Neon "AWS US East 2 (Ohio)": menos latencia
+    rootDir: backend
+    buildCommand: npm install && npm run db:migrate   # cambia a "npm ci" cuando subas package-lock.json
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true        # cada push a la rama principal despliega (RNF-20)
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL           # Neon · cadena POOLED (host con -pooler)
+        sync: false
+      - key: DATABASE_URL_DIRECT    # Neon · cadena DIRECTA (para las migraciones)
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: PUBLIC_API_URL         # p. ej. https://ecoruta-api.onrender.com
+        sync: false
+      - key: CORS_ORIGINS
+        value: ""
+      - key: MAIL_DRIVER            # smtp en producción
+        value: smtp
+      - key: MAIL_FROM
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_SECURE
+        value: "true"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: STORAGE_DRIVER         # cloudinary en producción (el disco de Render se borra)
+        value: cloudinary
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

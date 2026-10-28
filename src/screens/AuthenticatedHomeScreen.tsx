@@ -34,7 +34,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
             />
           </View>
           <View style={styles.userInfo}>
-            <Text style={styles.welcomeLabel}>Sesión activa (RF-03)</Text>
+            <Text style={styles.welcomeLabel}>Sesión activa </Text>
             <Text style={styles.userName}>{user.name}</Text>
             <Text style={styles.userEmail}>{user.email}</Text>
             <View style={styles.roleBadge}>

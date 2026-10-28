@@ -77,7 +77,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
             {!isSent ? (
               <>
                 <Text style={styles.description}>
-                  Ingresa tu correo institucional. Te enviaremos un enlace temporal con vigencia limitada para restablecer tu contraseña (RF-04).
+                  Ingresa tu correo institucional. Te enviaremos un enlace temporal con vigencia limitada para restablecer tu contraseña.
                 </Text>
 
                 <InputField

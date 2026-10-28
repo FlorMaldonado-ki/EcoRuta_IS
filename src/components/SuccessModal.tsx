@@ -55,7 +55,7 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
               <View style={styles.emailNoticeTextWrapper}>
                 <Text style={styles.emailNoticeTitle}>Enlace de verificación enviado</Text>
                 <Text style={styles.emailNoticeSubtitle}>
-                  Se simuló el envío a: <Text style={styles.emailBold}>{data.email}</Text>. (Vigencia 24 horas según ERS RF-02).
+                  Se realizó el envío a: <Text style={styles.emailBold}>{data.email}</Text>. .
                 </Text>
               </View>
             </View>
