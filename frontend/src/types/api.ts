@@ -1,12 +1,7 @@
 /**
- * EcoRuta Escolar · Contrato de la API (lado cliente)
- * ---------------------------------------------------------------------------
- * Forma EXACTA de lo que devuelven los mappers del backend
- * (backend/src/modules/*\/*.mapper.js). Mantener ambos lados sincronizados.
- *   - camelCase en todo el JSON; la BD usa snake_case y nunca se expone tal cual.
- *   - IDs: string (UUID).  Fechas: ISO-8601 UTC.  Coordenadas y distancias: number.
+ * EcoRuta Escolar · Contratos TypeScript y Tipos del Frontend (Sprint 1 + Sprint 2)
  */
-import type { UserType } from './registration';
+import type { UserType, AttachedFile } from './registration';
 
 /** Rol de SEGURIDAD (RNF-09). No confundir con UserType (alumno/maestro). */
 export type SecurityRole = 'user' | 'admin';
@@ -24,14 +19,16 @@ export interface UserDTO {
   status: AccountStatus;
   emailVerified: boolean;
   createdAt: string;
-  ratingAverage?: number | null;
-  ratingCount?: number;
+  controlNumber?: string;
+  photoUrl?: string | null;   // Fotografía capturada con la cámara
+  vehicle?: VehicleDTO | null;
+  route?: DriverRoute | null;
 }
 
 export interface LoginRequest { email: string; password: string }
 export interface LoginResponse { token: string; user: UserDTO }
 
-/** Sesión activa en la app. */
+/** Sesión activa en la app */
 export interface Session { token: string; user: UserDTO }
 
 export interface RegisterResponse { user: UserDTO; emailSent: boolean; message: string }
@@ -42,6 +39,7 @@ export interface UpdateProfileRequest {
   career?: string;
   department?: string;
   phone?: string | null;
+  photoUrl?: string | null;
 }
 
 export interface CampusPoint { key: string; name: string; lat: number; lng: number }
@@ -60,21 +58,66 @@ export interface CommunityImpactDTO {
 }
 export interface MyImpactDTO { co2TodayKg: number; co2TotalKg: number; trips: number }
 
+/** Información del vehículo del conductor (Sprint 2) */
 export interface VehicleDTO {
-  id: string; brand: string; model: string; color: string; plates: string;
-  capacity: number; active: boolean;
+  id: string;
+  brand: string;
+  model: string;
+  color: string;
+  plates?: string | null;       // Protegido por RNF-12: visible solo con reserva aceptada o conductor
+  capacity: number;
+  active: boolean;
+  declarationLicenseInsurance: boolean; // Declaración bajo protesta (RN-12)
+  circulationDoc?: AttachedFile | null;
 }
 
 export type TripDirection = 'to_campus' | 'from_campus';
 export type TripStatus = 'published' | 'in_progress' | 'finished' | 'cancelled';
 export interface Place { text: string; lat: number; lng: number }
+
+/** Punto de encuentro seleccionado directamente en el mapa */
+export interface MeetingPoint {
+  id: string;
+  name: string;
+  description?: string;
+  lat: number;
+  lng: number;
+  order: number;
+}
+
+/** Ruta registrada del conductor */
+export interface DriverRoute {
+  id: string;
+  driverId?: string;
+  direction: TripDirection;
+  campusPoint: string;          // 'campus_1' | 'campus_2' | 'metalurgia'
+  origin: Place;
+  destination: Place;
+  meetingPoints: MeetingPoint[];
+  isConfigured: boolean;        // true si ya completó la ruta de prueba y guardó puntos
+  distanceKm?: number;
+  durationMin?: number;
+  notes?: string;
+  updatedAt: string;
+}
+
+export type ReservationStatus =
+  | 'none'
+  | 'solicitada'
+  | 'pendiente'
+  | 'aceptada'
+  | 'rechazada'
+  | 'cancelada';
+
+/** Viaje publicado */
 export interface TripDTO {
   id: string;
   direction: TripDirection;
   campusPoint: string;
   origin: Place;
   destination: Place;
-  departureAt: string;
+  departureAt: string;          // ISO-8601
+  estimatedArrivalAt?: string | null; // ISO-8601 calculada con durationMin
   seatsTotal: number;
   seatsAvailable: number;
   distanceKm: number;
@@ -82,14 +125,90 @@ export interface TripDTO {
   distanceSource: 'osrm' | 'haversine';
   status: TripStatus;
   notes: string | null;
+  meetingPoints: MeetingPoint[];
   distanceFromYouKm?: number;
-  driver?: { id: string; fullName: string; affiliation: string };
-  vehicle?: { brand: string; model: string; color: string };
+  driver: {
+    id: string;
+    fullName: string;
+    affiliation?: string | null;
+    photoUrl?: string | null;   // Foto obligatoria desde la cámara
+  };
+  vehicle: {
+    brand: string;
+    model: string;
+    color: string;
+    plates?: string | null;     // Solo visible si está permitido (reserva aceptada)
+  };
+  userReservationStatus?: ReservationStatus;
+  userReservationId?: string | null;
 }
 
-/** Cuerpo de error de la API. `fields` usa las claves de FormErrors → setErrors(err.fields). */
+export interface SearchTripsParams {
+  date?: string;             // YYYY-MM-DD
+  timeFrom?: string;         // HH:MM
+  timeTo?: string;           // HH:MM
+  direction?: TripDirection; // 'to_campus' | 'from_campus'
+  campusPoint?: string;      // 'campus_1' | 'campus_2' | 'metalurgia'
+  lat?: number;
+  lng?: number;
+  radiusKm?: number;
+  minSeats?: number;
+}
+
+export interface ReservationDTO {
+  id: string;
+  tripId: string;
+  passengerId: string;
+  passengerName: string;
+  passengerAffiliation?: string;
+  passengerPhoto?: string | null;
+  status: ReservationStatus;
+  createdAt: string;
+  requestedAt?: string;
+  respondedAt?: string | null;
+  cancelledAt?: string | null;
+  lateCancellation?: boolean; // RN-06: < 20 min antes de salida
+  trip?: TripDTO;
+}
+
+/** Notificación dentro de la aplicación con límite de 72 horas */
+export type NotificationType =
+  | 'solicitud_recibida'
+  | 'solicitud_aceptada'
+  | 'solicitud_rechazada'
+  | 'solicitud_cancelada'
+  | 'lugar_cancelado'
+  | 'viaje_cancelado'
+  | 'viaje_proximo';
+
+export interface NotificationItem {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  createdAt: string;          // ISO-8601 para calcular antigüedad de 72 horas
+  read: boolean;
+  relatedTripId?: string;
+  relatedReservationId?: string;
+}
+
+/** Evento para preparación de notificación por correo */
+export interface EmailNotificationEvent {
+  id: string;
+  recipientEmail: string;
+  recipientName: string;
+  subject: string;
+  summary: string;
+  event: NotificationType;
+  tripOrigin: string;
+  tripDestination: string;
+  departureTime: string;
+  timestamp: string;
+}
+
 export interface ApiErrorBody {
-  error: string;   // 'VALIDATION', 'CORREO_REGISTRADO', 'CORREO_NO_VERIFICADO', …
+  error: string;
   message?: string;
   fields?: Record<string, string>;
 }
