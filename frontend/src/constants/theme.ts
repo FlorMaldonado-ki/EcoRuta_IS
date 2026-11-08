@@ -5,7 +5,7 @@ export const THEME = {
     primaryDark: '#4F0F27',     // Guinda oscuro / hover / pressed
     primaryLight: '#8C2349',    // Guinda claro
     primarySoft: '#FBF0F4',     // Guinda de fondo suave / tag
-    
+
     accent: '#C59B27',          // Dorado institucional
     accentLight: '#F3E5AB',     // Dorado suave
     accentDark: '#997314',      // Dorado oscuro
@@ -15,7 +15,7 @@ export const THEME = {
     background: '#F4F6F9',      // Fondo general
     surface: '#FFFFFF',         // Tarjetas y modales
     surfaceAlt: '#F8FAFC',      // Inputs y secciones secundarias
-    
+
     // Textos
     textPrimary: '#1E293B',     // Títulos y textos principales
     textSecondary: '#64748B',   // Subtítulos y descripciones
@@ -31,13 +31,14 @@ export const THEME = {
     success: '#15803D',
     successBg: '#F0FDF4',
     successBorder: '#86EFAC',
-    
+
     error: '#DC2626',
     errorBg: '#FEF2F2',
     errorBorder: '#FCA5A5',
 
     warning: '#D97706',
     warningBg: '#FFFBEB',
+    warningBorder: '#FDE68A',
   },
   spacing: {
     xs: 4,
@@ -54,6 +55,7 @@ export const THEME = {
     lg: 14,
     xl: 20,
     pill: 999,
+    full: 999,
   },
   shadows: {
     card: {

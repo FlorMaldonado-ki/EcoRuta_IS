@@ -8,30 +8,52 @@ import { AuthenticatedHomeScreen } from './src/screens/AuthenticatedHomeScreen';
 import { THEME } from './src/constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { setAuthToken } from './src/services/apiClient';
-import type { Session } from './src/types/api';
+import type { Session, UserDTO } from './src/types/api';
 
 type ScreenType = 'login' | 'register' | 'authenticated';
 
+const DEMO_USER: UserDTO = {
+  id: 'current-user',
+  fullName: 'Mario Alberto Tena Morales',
+  email: 'mario.tena@morelia.tecnm.mx',
+  userType: 'alumno',
+  role: 'user',
+  status: 'active',
+  emailVerified: true,
+  career: 'Ingeniería en Sistemas Computacionales',
+  department: null,
+  phone: '4431234567',
+  controlNumber: '19120145',
+  createdAt: new Date().toISOString(),
+  photoUrl: null,
+};
+
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('register');
-  // Sesión en memoria: { token JWT, user: UserDTO }. Para conservarla al cerrar la app,
-  // agregar expo-secure-store (npx expo install expo-secure-store) y guardar session.token.
-  const [session, setSession] = useState<Session | null>(null);
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>('authenticated');
+  const [session, setSession] = useState<Session | null>({
+    token: 'demo-sprint2-jwt-token',
+    user: DEMO_USER,
+  });
 
   const handleLoginSuccess = (newSession: Session) => {
-    setAuthToken(newSession.token); // todas las peticiones siguientes llevan Authorization: Bearer
+    setAuthToken(newSession.token);
     setSession(newSession);
     setCurrentScreen('authenticated');
   };
 
-  // RF-03 · Cerrar sesión: la API es stateless, basta con descartar el token.
   const handleLogout = () => {
     setAuthToken(null);
     setSession(null);
     setCurrentScreen('login');
   };
 
-
+  const handleQuickDemoSession = () => {
+    setSession({
+      token: 'demo-sprint2-jwt-token',
+      user: DEMO_USER,
+    });
+    setCurrentScreen('authenticated');
+  };
 
   return (
     <SafeAreaProvider>
@@ -94,6 +116,21 @@ export default function App() {
                 Iniciar Sesión
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.navTab, styles.demoTab]}
+              onPress={handleQuickDemoSession}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons
+                name="rocket-launch"
+                size={16}
+                color={THEME.colors.accent}
+              />
+              <Text style={[styles.navTabText, styles.demoTabText]}>
+                Sprint 2 Demo
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -132,12 +169,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(197, 155, 39, 0.25)',
     justifyContent: 'center',
+    flexWrap: 'wrap',
   },
   navTab: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 6,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     borderRadius: 20,
     gap: 6,
   },
@@ -145,6 +183,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderWidth: 1,
     borderColor: 'rgba(197, 155, 39, 0.5)',
+  },
+  demoTab: {
+    backgroundColor: 'rgba(197, 155, 39, 0.2)',
+    borderWidth: 1,
+    borderColor: THEME.colors.accent,
   },
   navTabText: {
     fontSize: 13,
@@ -154,6 +197,10 @@ const styles = StyleSheet.create({
   navTabTextActive: {
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  demoTabText: {
+    color: THEME.colors.accent,
+    fontWeight: '800',
   },
   content: {
     flex: 1,
