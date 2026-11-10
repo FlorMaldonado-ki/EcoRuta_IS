@@ -12,15 +12,19 @@ const respuesta = (message) => (req, res) => {
 };
 
 const base = { standardHeaders: 'draft-7', legacyHeaders: false };
+const enProduccion = process.env.NODE_ENV === 'production';
+// Límites configurables (RNF-11). En el campus muchos usuarios comparten la misma IP
+// pública, así que el general debe ser holgado; ajustarlo en Render con RATE_LIMIT_GENERAL.
+const limite = (variable, prod, dev) => Number(process.env[variable]) || (enProduccion ? prod : dev);
 
 module.exports = {
   // Inicio de sesión: 20 intentos por IP cada 15 min.
-  login: rateLimit({ ...base, windowMs: 15 * 60_000, limit: 20,
+  login: rateLimit({ ...base, windowMs: 15 * 60_000, limit: limite('RATE_LIMIT_LOGIN', 20, 20),
     handler: respuesta('Demasiados intentos de inicio de sesión. Espera unos minutos.') }),
-  // Todo lo que envía correo: 8 por IP cada hora.
-  correos: rateLimit({ ...base, windowMs: 60 * 60_000, limit: 8,
+  // Todo lo que envía correo: 8 por IP cada hora (30 en desarrollo).
+  correos: rateLimit({ ...base, windowMs: 60 * 60_000, limit: limite('RATE_LIMIT_CORREOS', 8, 30),
     handler: respuesta('Has solicitado demasiados correos. Intenta más tarde.') }),
-  // General para la API: 300 por IP cada 15 min.
-  general: rateLimit({ ...base, windowMs: 15 * 60_000, limit: 300,
+  // General para la API: 300 por IP cada 15 min en producción (5000 en desarrollo/pruebas).
+  general: rateLimit({ ...base, windowMs: 15 * 60_000, limit: limite('RATE_LIMIT_GENERAL', 300, 5000),
     handler: respuesta('Demasiadas peticiones. Intenta en unos minutos.') }),
 };

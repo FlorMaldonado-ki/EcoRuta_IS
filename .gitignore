@@ -8,3 +8,4 @@ backend/uploads/
 *.bak
 subir_a_github.bat
 subir_log.txt
+_claude_tmp/

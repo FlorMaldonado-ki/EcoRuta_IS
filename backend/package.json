@@ -1,6 +1,6 @@
 {
   "name": "ecoruta-api",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "API REST de EcoRuta Escolar (TecNM Campus Morelia)",
   "main": "src/server.js",
   "private": true,
@@ -14,7 +14,9 @@
     "db:status": "node db/migrate.js status",
     "db:seed": "node db/migrate.js seed",
     "db:bundle": "node db/build-neon-bundle.js",
-    "test:smoke": "node scripts/smoke-test.js"
+    "test:smoke": "node scripts/smoke-test.js",
+    "test": "node test/correr.js",
+    "test:concurrencia": "node scripts/concurrencia-asiento.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -25,7 +27,7 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
-    "nodemailer": "^7.0.10",
+    "nodemailer": "^10.4.0",
     "pg": "^8.23.1"
   }
 }

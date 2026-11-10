@@ -14,14 +14,22 @@ const ERRORES_BD = {
   DOCUMENTO_NO_CORRESPONDE: [422, 'El documento no corresponde a tu tipo de usuario.'],
   CONDUCTOR_NO_ACTIVO: [403, 'Verifica tu correo para publicar viajes.'],
   PASAJERO_NO_ACTIVO: [403, 'Verifica tu correo para reservar viajes.'],
-  VEHICULO_INACTIVO: [422, 'Ese vehículo está desactivado.'],
-  ASIENTOS_EXCEDEN_CAPACIDAD: [422, 'Ofreces más asientos de los que tiene tu vehículo.'],
-  PUNTO_CAMPUS_INVALIDO: [422, 'Elige un punto del campus de la lista.'],
+  VEHICULO_INACTIVO: [422, 'Ese vehículo está desactivado.', 'vehicleId'],
+  ASIENTOS_EXCEDEN_CAPACIDAD: [422, 'Ofreces más asientos de los que tiene tu vehículo.', 'seats'],
+  PUNTO_CAMPUS_INVALIDO: [422, 'Elige un punto del campus de la lista.', 'campusPoint'],
   RESERVA_PROPIA: [422, 'No puedes reservar tu propio viaje.'],
   VIAJE_NO_DISPONIBLE: [409, 'Este viaje ya no está disponible.'],
   SIN_ASIENTOS: [409, 'Ya no quedan lugares en este viaje.'],
   NO_PARTICIPANTE: [403, 'Solo quienes participaron en el viaje pueden calificar.'],
   VIAJE_NO_FINALIZADO: [409, 'El viaje aún no ha finalizado.'],
+};
+
+// Restricciones UNIQUE (SQLSTATE 23505) → [código, mensaje, campo].
+const DUPLICADOS = {
+  uq_usuario_correo: ['CORREO_REGISTRADO', 'Este correo ya tiene una cuenta. Inicia sesión o recupera tu contraseña.', 'email'],
+  uq_vehiculo_usuario_placas: ['PLACAS_REGISTRADAS', 'Ya registraste un vehículo con esas placas.', 'plates'],
+  uq_reserva_viaje_pasajero_vigente: ['RESERVA_DUPLICADA', 'Ya tienes una solicitud en este viaje.'],
+  uq_impacto_viaje: ['IMPACTO_YA_REGISTRADO', 'El impacto de este viaje ya se registró.'],
 };
 
 // eslint-disable-next-line no-unused-vars
@@ -44,12 +52,16 @@ function errorHandler(err, req, res, _next) {
     return res.status(status).json({ error: codigo, message, ...(campo && { fields: { [campo]: message } }) });
   }
   if (err.code === '23505') {
-    const duplicadoCorreo = err.constraint === 'uq_usuario_correo';
-    return res.status(409).json({
-      error: duplicadoCorreo ? 'CORREO_REGISTRADO' : 'DUPLICADO',
-      message: duplicadoCorreo ? 'Este correo ya tiene una cuenta. Inicia sesión o recupera tu contraseña.' : 'El registro ya existe.',
-      ...(duplicadoCorreo && { fields: { email: 'Este correo ya tiene una cuenta.' } }),
-    });
+    const [codigoDup, mensaje, campo] = DUPLICADOS[err.constraint] || ['DUPLICADO', 'El registro ya existe.'];
+    return res.status(409).json({ error: codigoDup, message: mensaje, ...(campo && { fields: { [campo]: mensaje } }) });
+  }
+  if (err.code === '23503') {
+    return res.status(422).json({ error: 'REFERENCIA_INVALIDA', message: 'Uno de los datos hace referencia a algo que no existe.' });
+  }
+  if (err.code === '23514') {
+    // CHECK que la API debió validar antes: se registra para corregir la validación (db/README.md).
+    console.error(`[error] ${req.method} ${req.originalUrl} CHECK no validado en la API: ${err.constraint || err.message}`);
+    return res.status(422).json({ error: 'DATOS_INVALIDOS', message: 'Revisa los datos enviados.' });
   }
   if (err.code === '22P02') {
     return res.status(404).json({ error: 'NO_ENCONTRADO', message: 'No encontramos lo que buscas.' });
