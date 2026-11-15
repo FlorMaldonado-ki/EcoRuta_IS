@@ -1,6 +1,6 @@
 -- =============================================================================
 -- EcoRuta Escolar · Esquema completo para el SQL Editor de Neon
--- Generado por db/build-neon-bundle.js el 2026-10-20T16:08:59.901Z
+-- Generado por db/build-neon-bundle.js el 2026-11-13T04:07:03.903Z
 -- NO EDITAR A MANO: edita db/migrations/ y vuelve a generar con "npm run db:bundle".
 -- Ejecutar UNA sola vez en una base vacía. Es una transacción: si algo falla, no se aplica nada.
 -- =============================================================================
@@ -887,6 +887,141 @@ INSERT INTO parametro (clave, valor, descripcion) VALUES
    'Departamentos o áreas válidas para maestros (RF-01). Fuente única para GET /api/catalogos.');
 
 INSERT INTO schema_migrations (nombre, checksum) VALUES ('008_datos_referencia.sql', '0e1b18b9801f0e5ff82381e134b5123dd02912b5f9033a3c91920e063c4c64f7');
+
+-- >>>>>>>>>>>>>>>>>>>> 009_puntos_campus.sql >>>>>>>>>>>>>>>>>>>>
+-- =============================================================================
+-- EcoRuta Escolar · Migración 009 · Puntos del campus definitivos (RN-11)
+-- -----------------------------------------------------------------------------
+-- Reemplaza los 3 puntos aproximados de la migración 008 (entrada_principal,
+-- entrada_posterior, estacionamiento, todos en Campus 1) por los puntos de
+-- referencia que usa el frontend (frontend/src/constants/options.ts →
+-- CAMPUS_REFERENCE_POINTS): campus_1, campus_2 y metalurgia.
+-- El frontend debe tomarlos de GET /api/catalogos → campusPoints.
+-- =============================================================================
+
+UPDATE parametro
+   SET valor = '[
+      {"clave": "campus_1",   "nombre": "Campus 1 (Central - Av. Tecnológico)", "lat": 19.721700, "lng": -101.185800},
+      {"clave": "campus_2",   "nombre": "Campus 2",                             "lat": 19.688500, "lng": -101.240500},
+      {"clave": "metalurgia", "nombre": "Metalurgia (Unidad Morelia)",          "lat": 19.724000, "lng": -101.187000}
+    ]'::jsonb,
+       descripcion = 'Puntos del campus que pueden ser origen o destino de un viaje (RN-11). Mismos que CAMPUS_REFERENCE_POINTS del frontend.'
+ WHERE clave = 'puntos_campus';
+
+-- Los viajes ya publicados con los puntos anteriores pasan a campus_1 (los tres
+-- estaban en Campus 1). Se desactiva un momento la validación del trigger para no
+-- revalidar viajes históricos (conductor o vehículo que hoy podrían estar inactivos).
+ALTER TABLE viaje DISABLE TRIGGER trg_viaje_validar;
+UPDATE viaje
+   SET punto_campus = 'campus_1'
+ WHERE punto_campus IN ('entrada_principal', 'entrada_posterior', 'estacionamiento');
+ALTER TABLE viaje ENABLE TRIGGER trg_viaje_validar;
+
+INSERT INTO schema_migrations (nombre, checksum) VALUES ('009_puntos_campus.sql', '0ab447819183050747f31ff2aacea97307823360073478168a9ef8ab261f0d86');
+
+-- >>>>>>>>>>>>>>>>>>>> 010_notificaciones.sql >>>>>>>>>>>>>>>>>>>>
+-- =============================================================================
+-- EcoRuta Escolar · Migración 010 · Notificaciones dentro de la app
+-- Tabla: notificacion
+-- Avisos de solicitudes, respuestas y cancelaciones (complementa RF-20, que
+-- los enviará por correo en el Sprint 3). Retención de 72 horas.
+-- -----------------------------------------------------------------------------
+-- Una fila por aviso y por destinatario. La generan los módulos Reservas y
+-- Viajes después de cada acción (solicitar, aceptar, rechazar, cancelar lugar,
+-- cancelar viaje). Las de más de 72 h se purgan al consultar la bandeja.
+-- =============================================================================
+
+CREATE TABLE notificacion (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  usuario_id  UUID         NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,  -- destinatario
+  tipo        VARCHAR(24)  NOT NULL,
+  titulo      VARCHAR(120) NOT NULL,
+  mensaje     VARCHAR(400) NOT NULL,
+  viaje_id    UUID REFERENCES viaje(id)   ON DELETE CASCADE,
+  reserva_id  UUID REFERENCES reserva(id) ON DELETE CASCADE,
+  leida       BOOLEAN      NOT NULL DEFAULT false,
+  creada_en   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+
+  CONSTRAINT ck_notificacion_tipo CHECK (tipo IN (
+    'solicitud_recibida',   -- al conductor: un pasajero pidió lugar
+    'solicitud_aceptada',   -- al pasajero
+    'solicitud_rechazada',  -- al pasajero
+    'solicitud_cancelada',  -- al conductor: el pasajero retiró una solicitud pendiente
+    'lugar_cancelado',      -- al conductor: el pasajero canceló un lugar ya aceptado
+    'viaje_cancelado'       -- al pasajero: el conductor canceló el viaje
+  ))
+);
+
+-- Bandeja del usuario, más recientes primero (y conteo de no leídas).
+CREATE INDEX idx_notificacion_usuario_fecha ON notificacion (usuario_id, creada_en DESC);
+-- Purga por antigüedad (72 h).
+CREATE INDEX idx_notificacion_creada ON notificacion (creada_en);
+
+COMMENT ON TABLE notificacion IS 'Avisos dentro de la app. Se conservan 72 horas.';
+
+INSERT INTO schema_migrations (nombre, checksum) VALUES ('010_notificaciones.sql', '786e5a2e21617d21af5774116be5e34c12e1a45c4887fc2fbf071d547563a6be');
+
+-- >>>>>>>>>>>>>>>>>>>> 011_notificacion_marcas.sql >>>>>>>>>>>>>>>>>>>>
+-- =============================================================================
+-- EcoRuta Escolar · Migración 011 · Marcas de lectura por sección
+-- Tabla: notificacion_marca
+-- -----------------------------------------------------------------------------
+-- Guarda cuándo vio el usuario por última vez la búsqueda de viajes, para que el
+-- panel principal muestre cuántos viajes NUEVOS se publicaron desde entonces
+-- (insignia en "Buscar Viajes"). Una fila por usuario; si no existe, se cuentan
+-- los viajes de las últimas 24 horas.
+-- =============================================================================
+
+CREATE TABLE notificacion_marca (
+  usuario_id        UUID PRIMARY KEY REFERENCES usuario(id) ON DELETE CASCADE,
+  viajes_vistos_en  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Conteo de viajes publicados después de la marca (búsqueda de "nuevos").
+CREATE INDEX IF NOT EXISTS idx_viaje_publicado_creado ON viaje (creado_en) WHERE estado = 'publicado';
+
+COMMENT ON TABLE notificacion_marca IS 'Última vez que el usuario revisó la búsqueda de viajes (insignia de viajes nuevos).';
+
+INSERT INTO schema_migrations (nombre, checksum) VALUES ('011_notificacion_marcas.sql', 'd6d3cae1df33c082a08672893c771710af06197c886cb07a935d652b34e51c6e');
+
+-- >>>>>>>>>>>>>>>>>>>> 012_puntos_encuentro_lista_espera.sql >>>>>>>>>>>>>>>>>>>>
+-- =============================================================================
+-- EcoRuta Escolar · Migración 012 · Puntos de encuentro y lista de espera
+-- -----------------------------------------------------------------------------
+-- 1. viaje.puntos_encuentro: puntos que el conductor marcó en el mapa al publicar
+--    (se muestran al pasajero en el mapa interactivo del detalle).
+--      [{ "id": "p1", "nombre": "...", "descripcion": "...", "lat": 19.7, "lng": -101.1, "orden": 1 }]
+-- 2. reserva.punto_union: dónde se unirá el pasajero. Uno de los puntos del
+--    conductor o uno que el pasajero propone en la ruta:
+--      { "tipo": "conductor", "punto_id": "p1", "nombre": "...", "lat": .., "lng": .. }
+--      { "tipo": "propuesto", "nombre": "...", "lat": .., "lng": .., "nota": "..." }
+-- 3. Avisos de lista de espera: viaje_lleno (se llenó con tu solicitud pendiente)
+--    y lugar_liberado (alguien canceló y vuelve a haber lugar).
+-- Sin PostGIS (RNF-17): las coordenadas se validan en la API (zona de Morelia).
+-- =============================================================================
+
+ALTER TABLE viaje
+  ADD COLUMN puntos_encuentro JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD CONSTRAINT ck_viaje_puntos_encuentro CHECK (
+    jsonb_typeof(puntos_encuentro) = 'array' AND jsonb_array_length(puntos_encuentro) <= 8);
+
+ALTER TABLE reserva
+  ADD COLUMN punto_union JSONB,
+  ADD CONSTRAINT ck_reserva_punto_union CHECK (
+    punto_union IS NULL OR (jsonb_typeof(punto_union) = 'object' AND punto_union->>'tipo' IN ('conductor', 'propuesto')));
+
+COMMENT ON COLUMN viaje.puntos_encuentro IS 'Puntos de encuentro marcados por el conductor (máx. 8).';
+COMMENT ON COLUMN reserva.punto_union    IS 'Dónde se une el pasajero: punto del conductor o propuesto en la ruta.';
+
+ALTER TABLE notificacion DROP CONSTRAINT ck_notificacion_tipo;
+ALTER TABLE notificacion ADD CONSTRAINT ck_notificacion_tipo CHECK (tipo IN (
+  'solicitud_recibida', 'solicitud_aceptada', 'solicitud_rechazada',
+  'solicitud_cancelada', 'lugar_cancelado', 'viaje_cancelado',
+  'viaje_lleno',     -- al pasajero en espera: el viaje se llenó con su solicitud pendiente
+  'lugar_liberado'   -- al pasajero en espera: se liberó un lugar
+));
+
+INSERT INTO schema_migrations (nombre, checksum) VALUES ('012_puntos_encuentro_lista_espera.sql', '10d1623ac67d736c199168e6684d51d0fe8a823f47289c7a3aa6fdb45034e9f2');
 
 COMMIT;
 

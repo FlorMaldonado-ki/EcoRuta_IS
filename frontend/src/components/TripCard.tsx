@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../constants/theme';
 import type { TripDTO } from '../types/api';
+import { formatTripEstimate } from '../utils/tripEstimate';
 
 interface TripCardProps {
   trip: TripDTO;
@@ -82,6 +83,15 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
             </Text>
           </View>
         </View>
+      </View>
+
+      {/* Distancia y duración estimadas (RF-10) */}
+      <View style={styles.estimateRow}>
+        <MaterialCommunityIcons name="map-marker-path" size={13} color={THEME.colors.textSecondary} />
+        <Text style={styles.estimateText}>
+          {formatTripEstimate(trip)}
+          {trip.distanceSource === 'haversine' ? ' (aprox.)' : ''}
+        </Text>
       </View>
 
       {/* Separador */}
@@ -357,6 +367,17 @@ const styles = StyleSheet.create({
   textAccepted: { color: THEME.colors.success },
   textPending: { color: THEME.colors.warning },
   textRejected: { color: THEME.colors.error },
+  estimateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+  },
+  estimateText: {
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
+    fontWeight: '600',
+  },
   proximityRow: {
     flexDirection: 'row',
     alignItems: 'center',

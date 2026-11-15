@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Platform } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { RegisterScreen } from './src/screens/RegisterScreen';
@@ -8,51 +8,30 @@ import { AuthenticatedHomeScreen } from './src/screens/AuthenticatedHomeScreen';
 import { THEME } from './src/constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { setAuthToken } from './src/services/apiClient';
-import type { Session, UserDTO } from './src/types/api';
+import { resetLocalState } from './src/services/tripStorage';
+import { NotificationsProvider } from './src/hooks/useNotifications';
+import { AlertBanner } from './src/components/AlertBanner';
+import { NotificationsCenterModal } from './src/screens/NotificationsCenterModal';
+import type { Session } from './src/types/api';
 
 type ScreenType = 'login' | 'register' | 'authenticated';
 
-const DEMO_USER: UserDTO = {
-  id: 'current-user',
-  fullName: 'Mario Alberto Tena Morales',
-  email: 'mario.tena@morelia.tecnm.mx',
-  userType: 'alumno',
-  role: 'user',
-  status: 'active',
-  emailVerified: true,
-  career: 'Ingeniería en Sistemas Computacionales',
-  department: null,
-  phone: '4431234567',
-  controlNumber: '19120145',
-  createdAt: new Date().toISOString(),
-  photoUrl: null,
-};
-
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('authenticated');
-  const [session, setSession] = useState<Session | null>({
-    token: 'demo-sprint2-jwt-token',
-    user: DEMO_USER,
-  });
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>('login');
+  const [session, setSession] = useState<Session | null>(null);
 
   const handleLoginSuccess = (newSession: Session) => {
+    resetLocalState();
     setAuthToken(newSession.token);
     setSession(newSession);
     setCurrentScreen('authenticated');
   };
 
   const handleLogout = () => {
+    resetLocalState();
     setAuthToken(null);
     setSession(null);
     setCurrentScreen('login');
-  };
-
-  const handleQuickDemoSession = () => {
-    setSession({
-      token: 'demo-sprint2-jwt-token',
-      user: DEMO_USER,
-    });
-    setCurrentScreen('authenticated');
   };
 
   return (
@@ -60,7 +39,7 @@ export default function App() {
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <StatusBar style="light" />
 
-        {/* Barra superior de pestañas de navegación rápida para evaluación */}
+        {/* Pestañas Registro / Iniciar sesión */}
         {currentScreen !== 'authenticated' && (
           <View style={styles.navBar}>
             <TouchableOpacity
@@ -117,20 +96,6 @@ export default function App() {
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.navTab, styles.demoTab]}
-              onPress={handleQuickDemoSession}
-              activeOpacity={0.8}
-            >
-              <MaterialCommunityIcons
-                name="rocket-launch"
-                size={16}
-                color={THEME.colors.accent}
-              />
-              <Text style={[styles.navTabText, styles.demoTabText]}>
-                Sprint 2 Demo
-              </Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -147,7 +112,12 @@ export default function App() {
           )}
 
           {currentScreen === 'authenticated' && session && (
-            <AuthenticatedHomeScreen user={session.user} onLogout={handleLogout} />
+            // key: al cambiar de usuario se reinicia la bandeja y las alertas
+            <NotificationsProvider key={session.user.id}>
+              <AuthenticatedHomeScreen user={session.user} onLogout={handleLogout} />
+              <NotificationsCenterModal />
+              <AlertBanner />
+            </NotificationsProvider>
           )}
         </View>
       </SafeAreaView>
@@ -184,11 +154,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(197, 155, 39, 0.5)',
   },
-  demoTab: {
-    backgroundColor: 'rgba(197, 155, 39, 0.2)',
-    borderWidth: 1,
-    borderColor: THEME.colors.accent,
-  },
   navTabText: {
     fontSize: 13,
     fontWeight: '600',
@@ -197,10 +162,6 @@ const styles = StyleSheet.create({
   navTabTextActive: {
     color: '#FFFFFF',
     fontWeight: '700',
-  },
-  demoTabText: {
-    color: THEME.colors.accent,
-    fontWeight: '800',
   },
   content: {
     flex: 1,

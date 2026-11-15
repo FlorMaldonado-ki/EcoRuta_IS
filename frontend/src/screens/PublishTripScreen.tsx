@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,13 +12,15 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Header } from '../components/Header';
 import { InputField } from '../components/InputField';
 import { THEME } from '../constants/theme';
-import {
-  getDriverVehicle,
-  getDriverRoute,
-  getDriverPhoto,
-  publishTrip,
-} from '../services/tripStorage';
-import type { UserDTO, MeetingPoint } from '../types/api';
+import { getDriverRoute } from '../services/tripStorage';
+import { publishTrip, errorMessage, localYmd } from '../services/tripService';
+import { getMyVehicles } from '../services/vehicleService';
+import type { TripDTO, UserDTO } from '../types/api';
+import { formatTripEstimate, estimateSourceLabel } from '../utils/tripEstimate';
+import type { ApiVehicleDTO } from '../types/apiBackend';
+
+const NOTES_MAX = 300;
+const MAX_POINTS = 8;
 
 interface PublishTripScreenProps {
   currentUser: UserDTO;
@@ -35,9 +37,12 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
   onGoToRouteSetup,
   onSuccessPublished,
 }) => {
-  const vehicle = getDriverVehicle();
   const route = getDriverRoute();
-  const photoUrl = getDriverPhoto() || currentUser.photoUrl;
+
+  // Vehículo registrado en el backend (fuente única: GET /api/me/vehiculos)
+  const [vehicle, setVehicle] = useState<ApiVehicleDTO | null>(null);
+  const [loadingVehicle, setLoadingVehicle] = useState(true);
+  const maxSeats = vehicle?.maxSeats ?? 1;
 
   // Selección de fecha rápida
   const [dateOption, setDateOption] = useState<'today' | 'tomorrow' | 'custom'>('today');
@@ -51,7 +56,7 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
   }, []);
 
   const [departureTime, setDepartureTime] = useState<string>(defaultDepartureTime);
-  const [seats, setSeats] = useState<number>(3);
+  const [seats, setSeats] = useState<number>(1);
   const [notes, setNotes] = useState<string>('');
 
   // Selección de puntos de encuentro que aplican a este viaje
@@ -60,20 +65,33 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
   );
 
   // Estados de validación y carga
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [publishedTrip, setPublishedTrip] = useState<TripDTO | null>(null);
 
-  // Calcular fecha ISO final
+  useEffect(() => {
+    let cancelled = false;
+    getMyVehicles()
+      .then((list) => {
+        if (cancelled) return;
+        const v = list[0] ?? null;
+        setVehicle(v);
+        if (v) setSeats((s) => Math.min(Math.max(1, s), v.maxSeats) || 1);
+      })
+      .catch((err) => !cancelled && setErrorMsg(errorMessage(err)))
+      .finally(() => !cancelled && setLoadingVehicle(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Fecha seleccionada (AAAA-MM-DD en hora local del dispositivo)
   const getSelectedIsoDate = (): string => {
     const now = new Date();
-    if (dateOption === 'today') {
-      return now.toISOString().split('T')[0];
-    } else if (dateOption === 'tomorrow') {
-      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-      return tomorrow.toISOString().split('T')[0];
-    }
-    return customDate;
+    if (dateOption === 'today') return localYmd(now);
+    if (dateOption === 'tomorrow') return localYmd(new Date(now.getTime() + 24 * 60 * 60 * 1000));
+    return customDate.trim();
   };
 
   const toggleMeetingPoint = (id: string) => {
@@ -88,99 +106,100 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
     });
   };
 
-  const handlePublish = () => {
-    setErrorMessage(null);
+  const handlePublish = async () => {
+    setErrorMsg(null);
 
     if (!vehicle) {
-      setErrorMessage('Debes registrar tu vehículo antes de publicar un viaje.');
+      setErrorMsg('Debes registrar tu vehículo antes de publicar un viaje.');
       return;
     }
 
     if (!route || !route.isConfigured || (route.meetingPoints || []).length === 0) {
-      setErrorMessage('Debes configurar tu ruta y al menos un punto de encuentro antes de publicar.');
+      setErrorMsg('Debes configurar tu ruta y al menos un punto de encuentro antes de publicar.');
       return;
     }
 
     const isoDate = getSelectedIsoDate();
     if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
-      setErrorMessage('Por favor especifica una fecha válida (AAAA-MM-DD).');
+      setErrorMsg('Por favor especifica una fecha válida (AAAA-MM-DD).');
       return;
     }
 
     if (!departureTime || !/^\d{2}:\d{2}$/.test(departureTime)) {
-      setErrorMessage('Por favor especifica la hora de salida en formato HH:MM (ej. 07:30).');
+      setErrorMsg('Por favor especifica la hora de salida en formato HH:MM (ej. 07:30).');
       return;
     }
 
     const [hours, minutes] = departureTime.split(':').map(Number);
     const scheduledDateTime = new Date(`${isoDate}T${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`);
 
+    if (Number.isNaN(scheduledDateTime.getTime())) {
+      setErrorMsg('La fecha u hora no es válida. Revisa el formato (AAAA-MM-DD y HH:MM).');
+      return;
+    }
+
     const now = Date.now();
     const minNoticeMs = 30 * 60_000; // RN-04: mínimo 30 min de anticipación
 
     if (scheduledDateTime.getTime() <= now) {
-      setErrorMessage('No puedes publicar un viaje en una fecha u hora que ya pasó.');
+      setErrorMsg('No puedes publicar un viaje en una fecha u hora que ya pasó.');
       return;
     }
 
     if (scheduledDateTime.getTime() < now + minNoticeMs) {
-      setErrorMessage('Conforme a las reglas del programa (RN-04), debes publicar el viaje con al menos 30 minutos de anticipación.');
+      setErrorMsg('Conforme a las reglas del programa (RN-04), debes publicar el viaje con al menos 30 minutos de anticipación.');
       return;
     }
 
-    if (seats < 1 || seats > (vehicle.capacity || 4)) {
-      setErrorMessage(`El número de lugares debe ser entre 1 y la capacidad del vehículo (${vehicle.capacity || 4}).`);
+    if (seats < 1 || seats > maxSeats) {
+      setErrorMsg(`Tu vehículo permite ofrecer de 1 a ${maxSeats} lugar(es) (RN-03).`);
+      return;
+    }
+
+    // Puntos de encuentro elegidos para este viaje: el pasajero los verá en el mapa y elegirá dónde unirse.
+    const activeMeetingPoints = (route.meetingPoints || []).filter((p) => selectedPointIds.has(p.id));
+    if (activeMeetingPoints.length === 0) {
+      setErrorMsg('Elige al menos un punto de encuentro para este viaje.');
+      return;
+    }
+    if (activeMeetingPoints.length > MAX_POINTS) {
+      setErrorMsg(`Elige máximo ${MAX_POINTS} puntos de encuentro.`);
+      return;
+    }
+    const trimmedNotes = notes.trim();
+    if (trimmedNotes.length > NOTES_MAX) {
+      setErrorMsg(`Las indicaciones no pueden pasar de ${NOTES_MAX} caracteres (llevas ${trimmedNotes.length}).`);
       return;
     }
 
     setIsSubmitting(true);
-
-    // Filtrar los puntos de encuentro seleccionados
-    const activeMeetingPoints = (route.meetingPoints || []).filter((p) =>
-      selectedPointIds.has(p.id)
-    );
-
-    // Calcular hora estimada de llegada (~25 min después)
-    const arrivalDateTime = new Date(scheduledDateTime.getTime() + 25 * 60_000);
-
-    const result = publishTrip({
-      direction: route.direction,
-      campusPoint: route.campusPoint,
-      origin: route.origin,
-      destination: route.destination,
-      departureAt: scheduledDateTime.toISOString(),
-      estimatedArrivalAt: arrivalDateTime.toISOString(),
-      seatsTotal: seats,
-      distanceKm: 8.5,
-      durationMin: 25,
-      distanceSource: 'osrm',
-      notes: notes.trim() || null,
-      meetingPoints: activeMeetingPoints,
-      driver: {
-        id: currentUser.id,
-        fullName: currentUser.fullName,
-        affiliation: currentUser.career || currentUser.department || 'TecNM Morelia',
-        photoUrl: photoUrl || null,
-      },
-      vehicle: {
-        brand: vehicle.brand,
-        model: vehicle.model,
-        color: vehicle.color,
-        plates: vehicle.plates,
-      },
-    });
-
-    setIsSubmitting(false);
-
-    if (result.ok) {
+    try {
+      const created = await publishTrip(
+        {
+          vehicleId: vehicle.id,
+          direction: route.direction,
+          campusPoint: route.campusPoint,
+          ...(route.direction === 'to_campus' ? { origin: route.origin } : { destination: route.destination }),
+          departureAt: scheduledDateTime.toISOString(),
+          seats,
+          notes: trimmedNotes || null,
+          meetingPoints: activeMeetingPoints
+            .sort((a, b) => a.order - b.order)
+            .map((p) => ({ name: p.name, description: p.description || null, lat: p.lat, lng: p.lng })),
+        },
+        currentUser
+      );
+      setPublishedTrip(created);
       setShowSuccessModal(true);
-    } else {
-      setErrorMessage(result.message);
+    } catch (err) {
+      setErrorMsg(errorMessage(err));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   // Validación de requisitos previos
-  const hasVehicle = !!vehicle;
+  const hasVehicle = loadingVehicle || !!vehicle;
   const hasRoute = !!route && (route.meetingPoints || []).length > 0;
 
   return (
@@ -233,10 +252,10 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
           </View>
         )}
 
-        {errorMessage && (
+        {errorMsg && (
           <View style={styles.errorBox}>
             <MaterialCommunityIcons name="alert-circle" size={18} color={THEME.colors.error} />
-            <Text style={styles.errorText}>{errorMessage}</Text>
+            <Text style={styles.errorText}>{errorMsg}</Text>
           </View>
         )}
 
@@ -422,12 +441,9 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
             </View>
 
             <TouchableOpacity
-              style={[
-                styles.stepperBtn,
-                vehicle && seats >= (vehicle.capacity || 4) && styles.stepperBtnDisabled,
-              ]}
-              onPress={() => setSeats((s) => Math.min(vehicle?.capacity || 4, s + 1))}
-              disabled={vehicle ? seats >= (vehicle.capacity || 4) : false}
+              style={[styles.stepperBtn, seats >= maxSeats && styles.stepperBtnDisabled]}
+              onPress={() => setSeats((s) => Math.min(maxSeats, s + 1))}
+              disabled={seats >= maxSeats}
             >
               <MaterialCommunityIcons name="plus" size={20} color={THEME.colors.primary} />
             </TouchableOpacity>
@@ -448,10 +464,10 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
         <TouchableOpacity
           style={[
             styles.publishBtn,
-            (!hasVehicle || !hasRoute || isSubmitting) && styles.publishBtnDisabled,
+            (!vehicle || !hasRoute || isSubmitting) && styles.publishBtnDisabled,
           ]}
           onPress={handlePublish}
-          disabled={!hasVehicle || !hasRoute || isSubmitting}
+          disabled={!vehicle || !hasRoute || isSubmitting}
           activeOpacity={0.8}
         >
           {isSubmitting ? (
@@ -478,6 +494,14 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
               Tu viaje compartido ha sido publicado en EcoRuta Escolar. Los pasajeros de la comunidad TecNM podrán consultar tu ruta y solicitar un lugar.
             </Text>
 
+            {publishedTrip && (
+              <Text style={styles.modalEstimate}>
+                Trayecto estimado: {formatTripEstimate(publishedTrip)}
+                {'\n'}
+                <Text style={styles.modalEstimateSource}>{estimateSourceLabel(publishedTrip)}</Text>
+              </Text>
+            )}
+
             <TouchableOpacity
               style={styles.modalPrimaryBtn}
               onPress={() => {
@@ -496,6 +520,19 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
+  modalEstimate: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: THEME.colors.primary,
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  modalEstimateSource: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: THEME.colors.textMuted,
+  },
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,

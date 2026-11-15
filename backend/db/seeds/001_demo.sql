@@ -57,20 +57,20 @@ SELECT id, 'Volkswagen', 'Jetta', 'Blanco', 'PRB5678', 5, true FROM usuario WHER
 INSERT INTO viaje (conductor_id, vehiculo_id, sentido, punto_campus,
                    origen_texto, origen_lat, origen_lng, destino_texto, destino_lat, destino_lng,
                    salida_en, asientos_totales, distancia_km, duracion_min, notas)
-SELECT u.id, v.id, x.sentido, 'entrada_principal',
+SELECT u.id, v.id, x.sentido, 'campus_1',
        x.o_txt, x.o_lat, x.o_lng, x.d_txt, x.d_lat, x.d_lng,
        x.salida, 3, x.km, x.mins, x.notas
 FROM usuario u
 JOIN vehiculo v ON v.usuario_id = u.id
 JOIN (VALUES
   ('demo.ana@morelia.tecnm.mx',  'hacia_campus',
-   'Plaza Las Américas', 19.703900, -101.192400, 'Entrada principal (Av. Tecnológico)', 19.721700, -101.185800,
+   'Plaza Las Américas', 19.703900, -101.192400, 'Campus 1 (Central - Av. Tecnológico)', 19.721700, -101.185800,
    date_trunc('hour', now()) - interval '1 day', 4.10, 14, 'Frente a la entrada de Liverpool'),
   ('demo.ana@morelia.tecnm.mx',  'hacia_campus',
-   'Centro Histórico (Catedral)', 19.702400, -101.192200, 'Entrada principal (Av. Tecnológico)', 19.721700, -101.185800,
+   'Centro Histórico (Catedral)', 19.702400, -101.192200, 'Campus 1 (Central - Av. Tecnológico)', 19.721700, -101.185800,
    date_trunc('hour', now()) + interval '1 day 7 hours', 4.60, 18, 'Esquina Madero y Abasolo'),
   ('demo.luis@morelia.tecnm.mx', 'desde_campus',
-   'Entrada principal (Av. Tecnológico)', 19.721700, -101.185800, 'Altozano', 19.672000, -101.165000,
+   'Campus 1 (Central - Av. Tecnológico)', 19.721700, -101.185800, 'Altozano', 19.672000, -101.165000,
    date_trunc('hour', now()) + interval '1 day 15 hours', 7.80, 22, NULL)
 ) AS x(correo, sentido, o_txt, o_lat, o_lng, d_txt, d_lat, d_lng, salida, km, mins, notas)
   ON x.correo = u.correo;

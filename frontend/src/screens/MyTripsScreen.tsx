@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Modal,
-  Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Header } from '../components/Header';
@@ -15,10 +14,13 @@ import { THEME } from '../constants/theme';
 import {
   getMyTrips,
   cancelReservation,
-  finishTrip,
   cancelTripByDriver,
-} from '../services/tripStorage';
-import type { TripDTO, ReservationDTO, UserDTO } from '../types/api';
+  errorMessage,
+  isWaitlisted,
+  type MyTrips,
+} from '../services/tripService';
+import type { TripDTO, UserDTO } from '../types/api';
+import { useNotifications } from '../hooks/useNotifications';
 
 interface MyTripsScreenProps {
   currentUser: UserDTO;
@@ -41,10 +43,12 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
   const [roleMode, setRoleMode] = useState<RoleMode>('passenger');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
 
-  const [driverTrips, setDriverTrips] = useState<TripDTO[]>([]);
-  const [passengerTrips, setPassengerTrips] = useState<{ trip: TripDTO; reservation: ReservationDTO }[]>([]);
+  const [driverTrips, setDriverTrips] = useState<MyTrips['asDriver']>([]);
+  const [passengerTrips, setPassengerTrips] = useState<MyTrips['asPassenger']>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const { showAlert } = useNotifications();
   const [feedback, setFeedback] = useState<{ text: string; type: 'success' | 'error' | 'warning' } | null>(null);
 
   // Modal para confirmación de cancelación de pasajero con aviso de 20 min (RN-06)
@@ -57,113 +61,97 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
   // Modal para confirmación de cancelación de conductor
   const [cancelTripTarget, setCancelTripTarget] = useState<TripDTO | null>(null);
 
-  const loadData = () => {
-    const { asDriver, asPassenger } = getMyTrips(currentUser.id);
-    setDriverTrips(asDriver);
-    setPassengerTrips(asPassenger);
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const { asDriver, asPassenger } = await getMyTrips(currentUser);
+      setDriverTrips(asDriver);
+      setPassengerTrips(asPassenger);
+    } catch (err) {
+      setFeedback({ text: errorMessage(err), type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser.id]);
 
   // Filtrado de viajes de pasajero
   const filteredPassengerList = useMemo(() => {
     return passengerTrips.filter((item) => {
-      const isCancelled = item.reservation.status === 'cancelada';
-      const isFinished = item.trip.status === 'finished';
-
-      if (statusFilter === 'active') {
-        return !isCancelled && !isFinished && item.reservation.status !== 'rechazada';
-      }
-      if (statusFilter === 'finished') {
-        return isFinished;
-      }
-      if (statusFilter === 'cancelled') {
-        return isCancelled || item.reservation.status === 'rechazada';
-      }
-      return true;
+      const resStatus = item.reservation.status;
+      const isCancelled =
+        resStatus === 'cancelada' || resStatus === 'rechazada' || item.trip.status === 'cancelled';
+      if (statusFilter === 'active') return item.bucket !== 'history' && !isCancelled;
+      if (statusFilter === 'finished') return item.bucket === 'history' && !isCancelled;
+      return isCancelled;
     });
   }, [passengerTrips, statusFilter]);
 
   // Filtrado de viajes de conductor
   const filteredDriverList = useMemo(() => {
-    return driverTrips.filter((t) => {
-      if (statusFilter === 'active') return t.status === 'published';
-      if (statusFilter === 'finished') return t.status === 'finished';
-      if (statusFilter === 'cancelled') return t.status === 'cancelled';
-      return true;
-    });
+    return driverTrips
+      .filter(({ trip, bucket }) => {
+        const isCancelled = trip.status === 'cancelled';
+        if (statusFilter === 'active') return bucket !== 'history' && !isCancelled;
+        if (statusFilter === 'finished') return bucket === 'history' && !isCancelled;
+        return isCancelled;
+      })
+      .map(({ trip }) => trip);
   }, [driverTrips, statusFilter]);
 
-  // Manejar solicitud de cancelación de pasajero
-  const handlePromptCancelReservation = (reservationId: string, trip: TripDTO) => {
-    const depMs = new Date(trip.departureAt).getTime();
-    const minutesToDeparture = (depMs - Date.now()) / 60_000;
-    const isLate = minutesToDeparture < 20;
-
-    setCancelReservationTarget({ reservationId, trip, isLate });
+  // Manejar solicitud de cancelación de pasajero (RN-06: tardía solo si ya estaba aceptada)
+  const handlePromptCancelReservation = (reservationId: string, trip: TripDTO, wasAccepted: boolean) => {
+    const minutesToDeparture = (new Date(trip.departureAt).getTime() - Date.now()) / 60_000;
+    setCancelReservationTarget({ reservationId, trip, isLate: wasAccepted && minutesToDeparture < 20 });
   };
 
-  const handleConfirmCancelReservation = () => {
+  const handleConfirmCancelReservation = async () => {
     if (!cancelReservationTarget) return;
     const { reservationId } = cancelReservationTarget;
 
     setActionLoadingId(reservationId);
     setFeedback(null);
-
-    setTimeout(() => {
-      const res = cancelReservation(reservationId, currentUser.id);
+    setCancelReservationTarget(null);
+    try {
+      const res = await cancelReservation(reservationId);
+      setFeedback({ text: res.message, type: res.lateCancellation ? 'warning' : 'success' });
+      showAlert({
+        tone: 'critical',
+        title: res.lateCancellation ? 'Cancelación tardía registrada' : 'Reservación cancelada',
+        message: `${res.message} El conductor ya fue notificado.`,
+      });
+      await loadData();
+    } catch (err) {
+      setFeedback({ text: errorMessage(err), type: 'error' });
+      showAlert({ tone: 'warning', title: 'No se pudo cancelar', message: errorMessage(err) });
+    } finally {
       setActionLoadingId(null);
-      setCancelReservationTarget(null);
-      if (res.ok) {
-        setFeedback({
-          text: res.message,
-          type: res.lateCancellation ? 'warning' : 'success',
-        });
-        loadData();
-      } else {
-        setFeedback({ text: res.message, type: 'error' });
-      }
-    }, 350);
-  };
-
-  // Finalizar viaje por conductor
-  const handleFinishTrip = (tripId: string) => {
-    setActionLoadingId(tripId);
-    setFeedback(null);
-
-    setTimeout(() => {
-      const res = finishTrip(tripId);
-      setActionLoadingId(null);
-      if (res.ok) {
-        setFeedback({ text: res.message, type: 'success' });
-        loadData();
-      } else {
-        setFeedback({ text: res.message, type: 'error' });
-      }
-    }, 350);
+    }
   };
 
   // Cancelar viaje por conductor
-  const handleConfirmCancelTrip = () => {
+  const handleConfirmCancelTrip = async () => {
     if (!cancelTripTarget) return;
     const tripId = cancelTripTarget.id;
 
     setActionLoadingId(tripId);
     setFeedback(null);
-
-    setTimeout(() => {
-      const res = cancelTripByDriver(tripId);
+    setCancelTripTarget(null);
+    try {
+      const res = await cancelTripByDriver(tripId);
+      setFeedback({ text: res.message, type: 'success' });
+      showAlert({ tone: 'critical', title: 'Viaje cancelado', message: res.message });
+      await loadData();
+    } catch (err) {
+      setFeedback({ text: errorMessage(err), type: 'error' });
+      showAlert({ tone: 'warning', title: 'No se pudo cancelar el viaje', message: errorMessage(err) });
+    } finally {
       setActionLoadingId(null);
-      setCancelTripTarget(null);
-      if (res.ok) {
-        setFeedback({ text: res.message, type: 'success' });
-        loadData();
-      } else {
-        setFeedback({ text: res.message, type: 'error' });
-      }
-    }, 350);
+    }
   };
 
   const formatDateTime = (isoDate: string) => {
@@ -328,10 +316,16 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
           </TouchableOpacity>
         </View>
 
+        {isLoading && (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={THEME.colors.primary} />
+          </View>
+        )}
+
         {/* ================================================================= */}
         {/* VISTA COMO PASAJERO                                               */}
         {/* ================================================================= */}
-        {roleMode === 'passenger' && (
+        {!isLoading && roleMode === 'passenger' && (
           <View>
             {filteredPassengerList.length === 0 ? (
               <View style={styles.emptyCard}>
@@ -352,6 +346,7 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                 const { time, date } = formatDateTime(trip.departureAt);
                 const isAccepted = reservation.status === 'aceptada';
                 const isPending = reservation.status === 'pendiente' || reservation.status === 'solicitada';
+                const waiting = isWaitlisted(reservation.status, trip);
                 const isActing = actionLoadingId === reservation.id;
 
                 return (
@@ -388,6 +383,8 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                         >
                           {isAccepted
                             ? 'Confirmado'
+                            : waiting
+                            ? 'En espera · lleno'
                             : isPending
                             ? 'Pendiente'
                             : reservation.status === 'rechazada'
@@ -415,6 +412,16 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                         </View>
                       )}
                     </View>
+
+                    {/* Dónde se une */}
+                    {reservation.joinPoint && (isAccepted || isPending) ? (
+                      <View style={styles.joinRow}>
+                        <MaterialCommunityIcons name="map-marker-account" size={15} color={THEME.colors.primary} />
+                        <Text style={styles.joinRowText} numberOfLines={1}>
+                          Te unes en: {reservation.joinPoint.name}
+                        </Text>
+                      </View>
+                    ) : null}
 
                     {/* Origen y Destino */}
                     <View style={styles.tripRouteBox}>
@@ -458,7 +465,7 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       {(isAccepted || isPending) && (
                         <TouchableOpacity
                           style={styles.cancelSeatBtn}
-                          onPress={() => handlePromptCancelReservation(reservation.id, trip)}
+                          onPress={() => handlePromptCancelReservation(reservation.id, trip, isAccepted)}
                           disabled={isActing}
                           activeOpacity={0.8}
                         >
@@ -477,7 +484,7 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
         {/* ================================================================= */}
         {/* VISTA COMO CONDUCTOR                                              */}
         {/* ================================================================= */}
-        {roleMode === 'driver' && (
+        {!isLoading && roleMode === 'driver' && (
           <View>
             {/* Acceso directo a solicitudes y registrar */}
             <View style={styles.driverShortcutsRow}>
@@ -519,8 +526,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
             ) : (
               filteredDriverList.map((trip) => {
                 const { time, date } = formatDateTime(trip.departureAt);
-                const depMs = new Date(trip.departureAt).getTime();
-                const canFinish = depMs <= Date.now() && trip.status === 'published';
                 const isActing = actionLoadingId === trip.id;
 
                 return (
@@ -592,41 +597,23 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                         <Text style={styles.timeTagText}>{date}</Text>
                       </View>
                       <View style={styles.timeTag}>
-                        <MaterialCommunityIcons name="map-marker-multiple" size={14} color={THEME.colors.accent} />
+                        <MaterialCommunityIcons name="account-clock" size={14} color={THEME.colors.accent} />
                         <Text style={styles.timeTagText}>
-                          {(trip.meetingPoints || []).length} paradas
+                          {trip.pendingRequests ?? 0} solicitudes · {trip.acceptedPassengers ?? 0} aceptados
                         </Text>
                       </View>
                     </View>
 
                     {/* Acciones de Conductor */}
-                    {trip.status === 'published' && (
+                    {trip.status === 'published' && new Date(trip.departureAt).getTime() > Date.now() && (
                       <View style={styles.tripCardActions}>
                         <TouchableOpacity
-                          style={[styles.finishBtn, !canFinish && styles.finishBtnDisabled]}
-                          onPress={() => handleFinishTrip(trip.id)}
-                          disabled={!canFinish || isActing}
+                          style={styles.detailBtn}
+                          onPress={() => onSelectTripDetail(trip)}
                           activeOpacity={0.8}
                         >
-                          {isActing ? (
-                            <ActivityIndicator size="small" color={THEME.colors.success} />
-                          ) : (
-                            <>
-                              <MaterialCommunityIcons
-                                name="flag-checkered"
-                                size={16}
-                                color={canFinish ? THEME.colors.success : THEME.colors.textMuted}
-                              />
-                              <Text
-                                style={[
-                                  styles.finishBtnText,
-                                  !canFinish && { color: THEME.colors.textMuted },
-                                ]}
-                              >
-                                Finalizar Viaje
-                              </Text>
-                            </>
-                          )}
+                          <MaterialCommunityIcons name="map-search-outline" size={16} color={THEME.colors.primary} />
+                          <Text style={styles.detailBtnText}>Ver detalle</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -635,6 +622,7 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                           disabled={isActing}
                           activeOpacity={0.8}
                         >
+                          {isActing ? <ActivityIndicator size="small" color={THEME.colors.error} /> : null}
                           <MaterialCommunityIcons name="cancel" size={16} color={THEME.colors.error} />
                           <Text style={styles.cancelTripBtnText}>Cancelar Viaje</Text>
                         </TouchableOpacity>
@@ -700,7 +688,7 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
 
             <Text style={styles.modalTitle}>¿Cancelar viaje publicado?</Text>
             <Text style={styles.modalMessage}>
-              Al cancelar este viaje, se avisará inmediatamente a todos los pasajeros inscritos mediante notificación y correo institucional para que busquen una ruta alternativa.
+              Al cancelar este viaje se cancelarán las solicitudes y lugares de todos los pasajeros inscritos, y el viaje dejará de aparecer en la búsqueda.
             </Text>
 
             <View style={styles.modalActionsRow}>
@@ -732,6 +720,22 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 40,
+  },
+  joinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  joinRowText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.colors.primary,
+  },
+  loadingBox: {
+    paddingVertical: 24,
+    alignItems: 'center',
   },
   body: {
     padding: 16,

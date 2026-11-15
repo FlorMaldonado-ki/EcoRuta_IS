@@ -2,17 +2,16 @@ import React from 'react';
 import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../constants/theme';
-import { getUnreadNotificationCount } from '../services/tripStorage';
+import { useNotifications } from '../hooks/useNotifications';
 
 interface NotificationBellProps {
   unreadCount?: number;
   onPress: () => void;
 }
 
-export const NotificationBell: React.FC<NotificationBellProps> = ({
-  unreadCount = getUnreadNotificationCount(),
-  onPress,
-}) => {
+export const NotificationBell: React.FC<NotificationBellProps> = ({ unreadCount: unreadProp, onPress }) => {
+  const { unread } = useNotifications();
+  const unreadCount = unreadProp ?? unread;
   return (
     <TouchableOpacity
       style={styles.bellButton}

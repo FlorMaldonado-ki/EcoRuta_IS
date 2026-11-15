@@ -7,25 +7,17 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   FlatList,
-  Animated,
-  PanResponder,
-  Dimensions,
-  Platform,
+  RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-// Posición Y del bottom sheet: distancia desde la parte superior de la pantalla
-const SHEET_HALF = SCREEN_HEIGHT * 0.52;   // media pantalla (~52% desde arriba)
-const SHEET_FULL = 80;                      // casi pantalla completa (80px desde arriba)
-const SNAP_THRESHOLD = 100;                 // px de arrastre para hacer snap
 import { Header } from '../components/Header';
 import { TripCard } from '../components/TripCard';
 import { SelectModalField } from '../components/SelectModalField';
 import { THEME } from '../constants/theme';
 import { CAMPUS_REFERENCE_POINTS, MORELIA_ZONES } from '../constants/options';
-import { searchTrips } from '../services/tripStorage';
-import type { TripDTO, TripDirection, SearchTripsParams, UserDTO } from '../types/api';
+import { searchTrips, errorMessage, localYmd, type TripSearchFilters } from '../services/tripService';
+import type { TripDTO, TripDirection, UserDTO } from '../types/api';
+import { useNotifications } from '../hooks/useNotifications';
 
 interface PassengerSearchScreenProps {
   currentUser: UserDTO;
@@ -33,15 +25,46 @@ interface PassengerSearchScreenProps {
   onBackToHome: () => void;
 }
 
+type DateFilter = 'today' | 'tomorrow' | 'week';
+const WEEK_DAYS = 7;
+
+/** Fechas (AAAA-MM-DD, hora local) que cubre cada opción del filtro. */
+function datesFor(filter: DateFilter): string[] {
+  const now = Date.now();
+  const day = (offset: number) => localYmd(new Date(now + offset * 24 * 3600_000));
+  if (filter === 'today') return [day(0)];
+  if (filter === 'tomorrow') return [day(1)];
+  return Array.from({ length: WEEK_DAYS }, (_, i) => day(i));
+}
+
+const DATE_OPTIONS: { key: DateFilter; label: string }[] = [
+  { key: 'week', label: `Próximos ${WEEK_DAYS} días` },
+  { key: 'today', label: 'Hoy' },
+  { key: 'tomorrow', label: 'Mañana' },
+];
+
+const TIME_OPTIONS = [
+  { key: 'all', label: 'Cualquiera' },
+  { key: 'morning', label: 'Mañana (06:00 - 12:00)' },
+  { key: 'afternoon', label: 'Tarde (12:00 - 18:00)' },
+  { key: 'evening', label: 'Noche (18:00 - 22:00)' },
+];
+
+const CAMPUS_MAP: Record<string, string> = {
+  'Todos los campus': 'all',
+  'Campus 1': 'campus_1',
+  'Campus 2': 'campus_2',
+  Metalurgia: 'metalurgia',
+};
+
 export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
-  currentUser,
   onSelectTrip,
   onBackToHome,
 }) => {
   // Estados de filtros
   const [selectedDirection, setSelectedDirection] = useState<'all' | TripDirection>('all');
   const [selectedCampus, setSelectedCampus] = useState<string>('all');
-  const [selectedDateFilter, setSelectedDateFilter] = useState<'today' | 'tomorrow' | 'all'>('all');
+  const [selectedDateFilter, setSelectedDateFilter] = useState<DateFilter>('week');
   const [selectedTimeRange, setSelectedTimeRange] = useState<string>('all');
   const [selectedZone, setSelectedZone] = useState<string>('all');
   const [selectedRadius, setSelectedRadius] = useState<number>(0);
@@ -50,101 +73,21 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
 
   // Estados de carga y resultados
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [trips, setTrips] = useState<TripDTO[]>([]);
+  const requestId = useRef(0);
+  const { summary, markSectionSeen } = useNotifications();
 
-  // ── Bottom Sheet ────────────────────────────────────────────────────────
-  const [sheetExpanded, setSheetExpanded] = useState(false); // false = media, true = full
-  const sheetY = useRef(new Animated.Value(SHEET_HALF)).current;
-  const dragStartY = useRef(SHEET_HALF);
+  const campusOptions = useMemo(
+    () => ['Todos los campus', ...CAMPUS_REFERENCE_POINTS.map((c) => c.shortName)],
+    []
+  );
+  const zoneOptions = useMemo(() => ['Cualquier zona', ...MORELIA_ZONES.map((z) => z.name)], []);
 
-  const snapTo = useCallback((expanded: boolean) => {
-    const toY = expanded ? SHEET_FULL : SHEET_HALF;
-    Animated.spring(sheetY, {
-      toValue: toY,
-      useNativeDriver: false,
-      bounciness: 4,
-    }).start();
-    setSheetExpanded(expanded);
-    dragStartY.current = toY;
-  }, [sheetY]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 5,
-      onPanResponderGrant: () => {
-        // Captura el valor actual antes de empezar a arrastrar
-        sheetY.stopAnimation((val) => {
-          dragStartY.current = val;
-          sheetY.setValue(val);
-        });
-      },
-      onPanResponderMove: (_, gs) => {
-        const newY = dragStartY.current + gs.dy;
-        // Límites: no puede ir más arriba de SHEET_FULL ni más abajo de SHEET_HALF + 60
-        const clamped = Math.max(SHEET_FULL, Math.min(SHEET_HALF + 60, newY));
-        sheetY.setValue(clamped);
-      },
-      onPanResponderRelease: (_, gs) => {
-        const currentPos = dragStartY.current;
-        if (currentPos <= SHEET_HALF) {
-          // Estaba en media pantalla: sube si arrastró >threshold hacia arriba
-          snapTo(gs.dy < -SNAP_THRESHOLD ? true : false);
-        } else {
-          // Estaba en pantalla completa: baja si arrastró >threshold hacia abajo
-          snapTo(gs.dy > SNAP_THRESHOLD ? false : true);
-        }
-      },
-    })
-  ).current;
-
-  // Opciones de puntos de campus (Campus 1, Campus 2, Metalurgia)
-  const campusOptions = useMemo(() => {
-    return [
-      'Todos los campus',
-      ...CAMPUS_REFERENCE_POINTS.map((c) => c.shortName),
-    ];
-  }, []);
-
-  const campusMap: Record<string, string> = {
-    'Todos los campus': 'all',
-    'Campus 1': 'campus_1',
-    'Campus 2': 'campus_2',
-    Metalurgia: 'metalurgia',
-  };
-
-  // Opciones de zonas de Morelia
-  const zoneOptions = useMemo(() => {
-    return ['Cualquier zona', ...MORELIA_ZONES.map((z) => z.name)];
-  }, []);
-
-  // Ejecutar búsqueda cada vez que cambien los filtros
-  useEffect(() => {
-    fetchFilteredTrips();
-  }, [
-    selectedDirection,
-    selectedCampus,
-    selectedDateFilter,
-    selectedTimeRange,
-    selectedZone,
-    selectedRadius,
-    minSeats,
-  ]);
-
-  const fetchFilteredTrips = () => {
-    setIsLoading(true);
-
-    const now = new Date();
-    let dateStr: string | undefined = undefined;
-    if (selectedDateFilter === 'today') {
-      dateStr = now.toISOString().split('T')[0];
-    } else if (selectedDateFilter === 'tomorrow') {
-      const tomorrow = new Date(now.getTime() + 24 * 3600_000);
-      dateStr = tomorrow.toISOString().split('T')[0];
-    }
-
-    let timeFrom: string | undefined = undefined;
-    let timeTo: string | undefined = undefined;
+  const buildFilters = useCallback((): TripSearchFilters => {
+    let timeFrom: string | undefined;
+    let timeTo: string | undefined;
     if (selectedTimeRange === 'morning') {
       timeFrom = '06:00';
       timeTo = '12:00';
@@ -156,74 +99,70 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
       timeTo = '22:00';
     }
 
-    let lat: number | undefined = undefined;
-    let lng: number | undefined = undefined;
-    if (selectedZone !== 'all') {
-      const zoneObj = MORELIA_ZONES.find((z) => z.name === selectedZone);
-      if (zoneObj) {
-        lat = zoneObj.lat;
-        lng = zoneObj.lng;
-      }
-    }
+    const zone = selectedZone !== 'all' ? MORELIA_ZONES.find((z) => z.name === selectedZone) : undefined;
 
-    const params: SearchTripsParams = {
+    return {
       direction: selectedDirection === 'all' ? undefined : selectedDirection,
       campusPoint: selectedCampus === 'all' ? undefined : selectedCampus,
-      date: dateStr,
+      dates: datesFor(selectedDateFilter),
       timeFrom,
       timeTo,
-      lat,
-      lng,
+      lat: zone?.lat,
+      lng: zone?.lng,
       radiusKm: selectedRadius > 0 ? selectedRadius : undefined,
       minSeats,
     };
+  }, [selectedDirection, selectedCampus, selectedDateFilter, selectedTimeRange, selectedZone, selectedRadius, minSeats]);
 
-    setTimeout(() => {
-      const results = searchTrips(params, currentUser.id);
-      setTrips(results);
-      setIsLoading(false);
-    }, 200);
-  };
+  const fetchTrips = useCallback(
+    async (mode: 'load' | 'refresh') => {
+      const id = ++requestId.current;
+      if (mode === 'load') setIsLoading(true);
+      else setIsRefreshing(true);
+      setLoadError(null);
+      try {
+        const results = await searchTrips(buildFilters());
+        if (id === requestId.current) setTrips(results);
+      } catch (err) {
+        if (id === requestId.current) {
+          setTrips([]);
+          setLoadError(errorMessage(err));
+        }
+      } finally {
+        if (id === requestId.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
+      }
+    },
+    [buildFilters]
+  );
+
+  // Ejecutar búsqueda cada vez que cambien los filtros
+  useEffect(() => {
+    fetchTrips('load');
+  }, [fetchTrips]);
+
+  // Si se publica un viaje mientras estás en la búsqueda, la lista se actualiza sola.
+  useEffect(() => {
+    if (summary.newTrips > 0) {
+      fetchTrips('refresh');
+      markSectionSeen('search');
+    }
+  }, [summary.newTrips, fetchTrips, markSectionSeen]);
 
   const handleResetFilters = () => {
     setSelectedDirection('all');
     setSelectedCampus('all');
-    setSelectedDateFilter('all');
+    setSelectedDateFilter('week');
     setSelectedTimeRange('all');
     setSelectedZone('all');
     setSelectedRadius(0);
     setMinSeats(1);
   };
 
-  return (
-    <View style={styles.container}>
-      <Header subtitle="Búsqueda de Viajes" />
-
-      {/* Barra superior de regreso y título */}
-      <View style={styles.topNavigation}>
-        <TouchableOpacity style={styles.backButton} onPress={onBackToHome} activeOpacity={0.7}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={THEME.colors.primary} />
-          <Text style={styles.backButtonText}>Inicio</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.filterToggleBtn, isFilterExpanded && styles.filterToggleBtnActive]}
-          onPress={() => setIsFilterExpanded(!isFilterExpanded)}
-          activeOpacity={0.8}
-        >
-          <MaterialCommunityIcons
-            name="tune-variant"
-            size={18}
-            color={isFilterExpanded ? '#FFFFFF' : THEME.colors.primary}
-          />
-          <Text
-            style={[styles.filterToggleText, isFilterExpanded && styles.filterToggleTextActive]}
-          >
-            Filtros
-          </Text>
-        </TouchableOpacity>
-      </View>
-
+  const listHeader = (
+    <View>
       {/* Pestañas rápidas de sentido */}
       <View style={styles.directionTabs}>
         <TouchableOpacity
@@ -244,9 +183,7 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
             size={14}
             color={selectedDirection === 'to_campus' ? '#fff' : THEME.colors.primary}
           />
-          <Text
-            style={[styles.dirTabText, selectedDirection === 'to_campus' && styles.dirTabTextActive]}
-          >
+          <Text style={[styles.dirTabText, selectedDirection === 'to_campus' && styles.dirTabTextActive]}>
             Hacia el Campus
           </Text>
         </TouchableOpacity>
@@ -260,9 +197,7 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
             size={14}
             color={selectedDirection === 'from_campus' ? '#fff' : THEME.colors.primary}
           />
-          <Text
-            style={[styles.dirTabText, selectedDirection === 'from_campus' && styles.dirTabTextActive]}
-          >
+          <Text style={[styles.dirTabText, selectedDirection === 'from_campus' && styles.dirTabTextActive]}>
             Desde el Campus
           </Text>
         </TouchableOpacity>
@@ -272,58 +207,30 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
       {isFilterExpanded && (
         <View style={styles.filterCard}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterChipRow}>
-            {/* Filtros de Fecha */}
-            <TouchableOpacity
-              style={[styles.chip, selectedDateFilter === 'all' && styles.chipActive]}
-              onPress={() => setSelectedDateFilter('all')}
-            >
-              <Text style={[styles.chipText, selectedDateFilter === 'all' && styles.chipTextActive]}>
-                Cualquier fecha
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.chip, selectedDateFilter === 'today' && styles.chipActive]}
-              onPress={() => setSelectedDateFilter('today')}
-            >
-              <Text style={[styles.chipText, selectedDateFilter === 'today' && styles.chipTextActive]}>
-                Hoy
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.chip, selectedDateFilter === 'tomorrow' && styles.chipActive]}
-              onPress={() => setSelectedDateFilter('tomorrow')}
-            >
-              <Text
-                style={[styles.chipText, selectedDateFilter === 'tomorrow' && styles.chipTextActive]}
+            {DATE_OPTIONS.map((d) => (
+              <TouchableOpacity
+                key={d.key}
+                style={[styles.chip, selectedDateFilter === d.key && styles.chipActive]}
+                onPress={() => setSelectedDateFilter(d.key)}
               >
-                Mañana
-              </Text>
-            </TouchableOpacity>
+                <Text style={[styles.chipText, selectedDateFilter === d.key && styles.chipTextActive]}>
+                  {d.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </ScrollView>
 
           {/* Rango de Horario de Salida */}
           <View style={styles.filterSubSection}>
             <Text style={styles.filterSubLabel}>Horario de salida:</Text>
             <View style={styles.timeButtonsRow}>
-              {[
-                { key: 'all', label: 'Cualquiera' },
-                { key: 'morning', label: 'Mañana (06:00 - 12:00)' },
-                { key: 'afternoon', label: 'Tarde (12:00 - 18:00)' },
-                { key: 'evening', label: 'Noche (18:00 - 22:00)' },
-              ].map((t) => (
+              {TIME_OPTIONS.map((t) => (
                 <TouchableOpacity
                   key={t.key}
                   style={[styles.timeBtn, selectedTimeRange === t.key && styles.timeBtnActive]}
                   onPress={() => setSelectedTimeRange(t.key)}
                 >
-                  <Text
-                    style={[
-                      styles.timeBtnText,
-                      selectedTimeRange === t.key && styles.timeBtnTextActive,
-                    ]}
-                  >
+                  <Text style={[styles.timeBtnText, selectedTimeRange === t.key && styles.timeBtnTextActive]}>
                     {t.label}
                   </Text>
                 </TouchableOpacity>
@@ -337,10 +244,8 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
             placeholder="Selecciona Campus 1, 2 o Metalurgia"
             iconName="map-marker-radius"
             options={campusOptions}
-            value={
-              Object.keys(campusMap).find((k) => campusMap[k] === selectedCampus) || 'Todos los campus'
-            }
-            onSelect={(val) => setSelectedCampus(campusMap[val] || 'all')}
+            value={Object.keys(CAMPUS_MAP).find((k) => CAMPUS_MAP[k] === selectedCampus) || 'Todos los campus'}
+            onSelect={(val) => setSelectedCampus(CAMPUS_MAP[val] || 'all')}
           />
 
           {/* Zona de Morelia para cálculo de proximidad */}
@@ -364,12 +269,7 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
                     style={[styles.radiusBtn, selectedRadius === rad && styles.radiusBtnActive]}
                     onPress={() => setSelectedRadius(selectedRadius === rad ? 0 : rad)}
                   >
-                    <Text
-                      style={[
-                        styles.radiusBtnText,
-                        selectedRadius === rad && styles.radiusBtnTextActive,
-                      ]}
-                    >
+                    <Text style={[styles.radiusBtnText, selectedRadius === rad && styles.radiusBtnTextActive]}>
                       {rad} km
                     </Text>
                   </TouchableOpacity>
@@ -388,12 +288,7 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
                   style={[styles.seatCountBtn, minSeats === s && styles.seatCountBtnActive]}
                   onPress={() => setMinSeats(s)}
                 >
-                  <Text
-                    style={[
-                      styles.seatCountText,
-                      minSeats === s && styles.seatCountTextActive,
-                    ]}
-                  >
+                  <Text style={[styles.seatCountText, minSeats === s && styles.seatCountTextActive]}>
                     {s}+
                   </Text>
                 </TouchableOpacity>
@@ -408,62 +303,92 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
         </View>
       )}
 
-      {/* ── Bottom Sheet de Resultados ─────────────────────────────────────── */}
-      <Animated.View style={[styles.bottomSheet, { top: sheetY }]}>
+      {/* Encabezado de resultados */}
+      <View style={styles.resultsHeader}>
+        <Text style={styles.resultsCount}>
+          {isLoading
+            ? 'Buscando...'
+            : `${trips.length} ${trips.length === 1 ? 'viaje disponible' : 'viajes disponibles'}`}
+        </Text>
+        <Text style={styles.orderLabel}>Horario y cercanía</Text>
+      </View>
+    </View>
+  );
 
-        {/* Asa de arrastre — toca para hacer snap, o arrastra */}
-        <View style={styles.sheetHandleArea} {...panResponder.panHandlers}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.resultsHeader}>
-            <Text style={styles.resultsCount}>
-              {trips.length} {trips.length === 1 ? 'viaje disponible' : 'viajes disponibles'}
-            </Text>
-            <View style={styles.resultsHeaderRight}>
-              <Text style={styles.orderLabel}>Horario y cercanía</Text>
-              {/* Botón de expand/collapse */}
-              <TouchableOpacity
-                style={styles.expandBtn}
-                onPress={() => snapTo(!sheetExpanded)}
-                activeOpacity={0.7}
-              >
-                <MaterialCommunityIcons
-                  name={sheetExpanded ? 'chevron-down' : 'chevron-up'}
-                  size={22}
-                  color={THEME.colors.primary}
-                />
+  return (
+    <View style={styles.container}>
+      <Header subtitle="Búsqueda de Viajes" />
+
+      {/* Barra superior de regreso y filtros */}
+      <View style={styles.topNavigation}>
+        <TouchableOpacity style={styles.backButton} onPress={onBackToHome} activeOpacity={0.7}>
+          <MaterialCommunityIcons name="arrow-left" size={20} color={THEME.colors.primary} />
+          <Text style={styles.backButtonText}>Inicio</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.filterToggleBtn, isFilterExpanded && styles.filterToggleBtnActive]}
+          onPress={() => setIsFilterExpanded(!isFilterExpanded)}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons
+            name="tune-variant"
+            size={18}
+            color={isFilterExpanded ? '#FFFFFF' : THEME.colors.primary}
+          />
+          <Text style={[styles.filterToggleText, isFilterExpanded && styles.filterToggleTextActive]}>
+            Filtros
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Lista desplazable: filtros + resultados */}
+      <FlatList
+        style={styles.list}
+        data={isLoading ? [] : trips}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => <TripCard trip={item} onPress={() => onSelectTrip(item)} />}
+        ListHeaderComponent={listHeader}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => fetchTrips('refresh')}
+            colors={[THEME.colors.primary]}
+            tintColor={THEME.colors.primary}
+          />
+        }
+        ListEmptyComponent={
+          isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={THEME.colors.primary} />
+              <Text style={styles.loadingText}>Buscando rutas disponibles...</Text>
+            </View>
+          ) : loadError ? (
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons name="wifi-alert" size={60} color={THEME.colors.error} />
+              <Text style={styles.emptyTitle}>No se pudieron cargar los viajes</Text>
+              <Text style={styles.emptySubtitle}>{loadError}</Text>
+              <TouchableOpacity style={styles.emptyResetBtn} onPress={() => fetchTrips('load')}>
+                <Text style={styles.emptyResetBtnText}>Reintentar</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-
-        {/* Lista de viajes */}
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={THEME.colors.primary} />
-            <Text style={styles.loadingText}>Buscando rutas disponibles...</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={trips}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <TripCard trip={item} onPress={() => onSelectTrip(item)} />}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <MaterialCommunityIcons name="car-off" size={60} color={THEME.colors.textMuted} />
-                <Text style={styles.emptyTitle}>No hay viajes con estos filtros</Text>
-                <Text style={styles.emptySubtitle}>
-                  Prueba cambiando la fecha, ampliando el rango de horario o limpiando los filtros de proximidad.
-                </Text>
-                <TouchableOpacity style={styles.emptyResetBtn} onPress={handleResetFilters}>
-                  <Text style={styles.emptyResetBtnText}>Mostrar todos los viajes</Text>
-                </TouchableOpacity>
-              </View>
-            }
-          />
-        )}
-      </Animated.View>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons name="car-off" size={60} color={THEME.colors.textMuted} />
+              <Text style={styles.emptyTitle}>No hay viajes con estos filtros</Text>
+              <Text style={styles.emptySubtitle}>
+                Prueba cambiando la fecha, ampliando el rango de horario o limpiando los filtros de proximidad.
+              </Text>
+              <TouchableOpacity style={styles.emptyResetBtn} onPress={handleResetFilters}>
+                <Text style={styles.emptyResetBtnText}>Limpiar filtros</Text>
+              </TouchableOpacity>
+            </View>
+          )
+        }
+      />
     </View>
   );
 };
@@ -704,8 +629,12 @@ const styles = StyleSheet.create({
     color: THEME.colors.textMuted,
     fontStyle: 'italic',
   },
+  list: {
+    flex: 1,
+  },
   listContent: {
-    paddingBottom: 24,
+    paddingBottom: 32,
+    flexGrow: 1,
   },
   loadingContainer: {
     flex: 1,

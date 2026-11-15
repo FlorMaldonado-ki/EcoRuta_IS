@@ -9,6 +9,16 @@ export function notify(title: string, message: string) {
   }
 }
 
+/** Aviso con un único botón que ejecuta una acción al cerrarlo (p. ej. navegar). */
+export function notifyThen(title: string, message: string, buttonLabel: string, onClose: () => void) {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n\n${message}`);
+    onClose();
+    return;
+  }
+  Alert.alert(title, message, [{ text: buttonLabel, onPress: onClose }], { cancelable: false });
+}
+
 /** Pregunta con un botón de acción (p. ej. "Reenviar enlace"). */
 export function confirmAction(title: string, message: string, actionLabel: string, onConfirm: () => void) {
   if (Platform.OS === 'web') {

@@ -6,7 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Header } from '../components/Header';
@@ -22,8 +22,17 @@ import {
   saveDriverVehicle,
   getDriverVehicle,
 } from '../services/tripStorage';
+import { createVehicle, updateVehicle, getMyVehicles } from '../services/vehicleService';
+import { ApiError } from '../services/apiClient';
+import { notify, notifyThen } from '../utils/notify';
 import type { UserDTO, VehicleDTO } from '../types/api';
+import type { ApiVehicleDTO, ApiVehicleRequest } from '../types/apiBackend';
 import type { AttachedFile } from '../types/registration';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Claves de error del backend → claves de error del formulario. */
+const mapServerField = (k: string) => (k === 'licenseAndInsuranceDeclared' ? 'declaration' : k);
 
 interface DriverProfileVehicleScreenProps {
   currentUser: UserDTO;
@@ -52,8 +61,37 @@ export const DriverProfileVehicleScreen: React.FC<DriverProfileVehicleScreenProp
   const [declarationAccepted, setDeclarationAccepted] = useState(existingVehicle?.declarationLicenseInsurance ?? false);
   const [circulationDoc, setCirculationDoc] = useState<AttachedFile | null>(existingVehicle?.circulationDoc || null);
 
+  // Id del vehículo en el backend (si ya existe, se edita con PATCH en vez de crear otro)
+  const [serverVehicleId, setServerVehicleId] = useState<string | null>(
+    existingVehicle && UUID_RE.test(existingVehicle.id) ? existingVehicle.id : null
+  );
+  const [saving, setSaving] = useState(false);
+
   // Errores
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Si no hay vehículo en memoria local, precarga el que ya esté registrado en el backend.
+  useEffect(() => {
+    if (serverVehicleId) return;
+    let cancelled = false;
+    getMyVehicles()
+      .then((list) => {
+        const v = list[0];
+        if (!v || cancelled) return;
+        setServerVehicleId(v.id);
+        setBrand(v.brand);
+        setModel(v.model);
+        setSelectedColor(v.color);
+        setPlacas(v.plates);
+        setCapacity(String(v.capacity));
+        setDeclarationAccepted(v.licenseAndInsuranceDeclared);
+      })
+      .catch((err) => console.warn('[vehiculos] no se pudo precargar el vehículo:', err));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handlePhotoCaptured = (capturedDataUrl: string) => {
     setPhotoUrl(capturedDataUrl);
@@ -99,38 +137,71 @@ export const DriverProfileVehicleScreen: React.FC<DriverProfileVehicleScreenProp
     return Object.keys(err).length === 0;
   };
 
-  const handleSaveAndContinue = () => {
+  const handleSaveAndContinue = async () => {
+    if (saving) return;
     if (!validate()) {
-      Alert.alert('Datos incompletos', 'Por favor revisa los campos señalados antes de continuar.');
+      notify('Datos incompletos', 'Por favor revisa los campos señalados antes de continuar.');
       return;
     }
 
-    const vehicleData: VehicleDTO = {
-      id: existingVehicle?.id || `veh-${Date.now()}`,
+    const payload: ApiVehicleRequest = {
       brand: brand.trim(),
       model: model.trim(),
       color: selectedColor,
       plates: plates.trim().toUpperCase(),
       capacity: parseInt(capacity, 10),
-      active: true,
-      declarationLicenseInsurance: declarationAccepted,
-      circulationDoc,
+      licenseAndInsuranceDeclared: true,
     };
 
+    setSaving(true);
+    let saved: ApiVehicleDTO;
+    try {
+      saved = serverVehicleId
+        ? await updateVehicle(serverVehicleId, payload)
+        : await createVehicle(payload);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.fields && Object.keys(err.fields).length) {
+          const serverErrors: Record<string, string> = {};
+          Object.entries(err.fields).forEach(([k, v]) => {
+            serverErrors[mapServerField(k)] = v;
+          });
+          setErrors((prev) => ({ ...prev, ...serverErrors }));
+        }
+        notify('No se pudo registrar el vehículo', err.message);
+      } else {
+        console.warn('[vehiculos] error inesperado:', err);
+        notify('No se pudo registrar el vehículo', 'Ocurrió un error inesperado. Intenta de nuevo.');
+      }
+      return;
+    } finally {
+      setSaving(false);
+    }
+
+    setServerVehicleId(saved.id);
+
+    // Copia local para las pantallas que aún leen de tripStorage (p. ej. Publicar viaje).
+    const vehicleData: VehicleDTO = {
+      id: saved.id,
+      brand: saved.brand,
+      model: saved.model,
+      color: saved.color,
+      plates: saved.plates,
+      capacity: saved.capacity,
+      active: saved.active,
+      declarationLicenseInsurance: saved.licenseAndInsuranceDeclared,
+      circulationDoc,
+    };
     saveDriverVehicle(vehicleData);
     if (photoUrl) {
       saveDriverPhoto(photoUrl);
     }
 
-    Alert.alert(
+    notifyThen(
       '¡Vehículo y Conductor Registrados!',
       'Tu información fue guardada correctamente. Ahora configuremos tu ruta habitual para poder publicar viajes.',
-      [
-        {
-          text: 'Continuar a Registro de Ruta',
-          onPress: onSuccessNavigateToRoute,
-        },
-      ]
+      'Continuar a Registro de Ruta',
+      onSuccessNavigateToRoute
     );
   };
 
@@ -322,12 +393,19 @@ export const DriverProfileVehicleScreen: React.FC<DriverProfileVehicleScreenProp
 
         {/* Botón de Guardar y Continuar */}
         <TouchableOpacity
-          style={styles.submitBtn}
+          style={[styles.submitBtn, saving && { opacity: 0.7 }]}
           onPress={handleSaveAndContinue}
           activeOpacity={0.85}
+          disabled={saving}
         >
-          <Text style={styles.submitBtnText}>Guardar Datos y Registrar Ruta</Text>
-          <MaterialCommunityIcons name="arrow-right" size={20} color="#FFFFFF" />
+          <Text style={styles.submitBtnText}>
+            {saving ? 'Guardando...' : 'Guardar Datos y Registrar Ruta'}
+          </Text>
+          {saving ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <MaterialCommunityIcons name="arrow-right" size={20} color="#FFFFFF" />
+          )}
         </TouchableOpacity>
       </View>
 

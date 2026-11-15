@@ -10,7 +10,9 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../constants/theme';
-import { getDriverRoute, getUnreadNotificationCount } from '../services/tripStorage';
+import { getDriverRoute } from '../services/tripStorage';
+import { useNotifications } from '../hooks/useNotifications';
+import { SectionBadge } from './SectionBadge';
 import type { UserDTO } from '../types/api';
 
 export type AppNavScreen =
@@ -42,7 +44,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
   onLogout,
 }) => {
   const driverRoute = getDriverRoute();
-  const unreadNotifs = getUnreadNotificationCount();
+  const { unread: unreadNotifs, badges } = useNotifications();
 
   // Determinar estado de la ruta del conductor
   const hasRouteConfigured = !!driverRoute && (driverRoute.meetingPoints || []).length > 0;
@@ -136,6 +138,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
               >
                 Buscar Viajes (Pasajero)
               </Text>
+              <SectionBadge count={badges.search.count} variant="inline" />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -156,6 +159,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
               >
                 Mis Viajes (Historial)
               </Text>
+              <SectionBadge count={badges.myTrips.count} critical={badges.myTrips.critical} variant="inline" />
             </TouchableOpacity>
 
             {/* SECCIÓN CONDUCTOR */}
@@ -257,6 +261,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
               >
                 Solicitudes de Pasajeros
               </Text>
+              <SectionBadge count={badges.requests.count} variant="inline" />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -314,11 +319,11 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
               >
                 Notificaciones (72h)
               </Text>
-              {unreadNotifs > 0 && (
-                <View style={styles.notifBadge}>
-                  <Text style={styles.notifBadgeText}>{unreadNotifs}</Text>
-                </View>
-              )}
+              <SectionBadge
+                count={unreadNotifs}
+                critical={badges.myTrips.critical}
+                variant="inline"
+              />
             </TouchableOpacity>
 
             {/* CERRAR SESIÓN */}

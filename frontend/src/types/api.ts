@@ -101,6 +101,16 @@ export interface DriverRoute {
   updatedAt: string;
 }
 
+/** Dónde se une el pasajero al viaje. */
+export interface JoinPoint {
+  type: 'driver' | 'proposed';   // punto del conductor o propuesto por el pasajero
+  pointId: string | null;
+  name: string;
+  lat: number;
+  lng: number;
+  note: string | null;
+}
+
 export type ReservationStatus =
   | 'none'
   | 'solicitada'
@@ -132,6 +142,7 @@ export interface TripDTO {
     fullName: string;
     affiliation?: string | null;
     photoUrl?: string | null;   // Foto obligatoria desde la cámara
+    phone?: string | null;      // Solo conductor o reserva aceptada (RNF-12)
   };
   vehicle: {
     brand: string;
@@ -141,18 +152,10 @@ export interface TripDTO {
   };
   userReservationStatus?: ReservationStatus;
   userReservationId?: string | null;
-}
-
-export interface SearchTripsParams {
-  date?: string;             // YYYY-MM-DD
-  timeFrom?: string;         // HH:MM
-  timeTo?: string;           // HH:MM
-  direction?: TripDirection; // 'to_campus' | 'from_campus'
-  campusPoint?: string;      // 'campus_1' | 'campus_2' | 'metalurgia'
-  lat?: number;
-  lng?: number;
-  radiusKm?: number;
-  minSeats?: number;
+  userJoinPoint?: JoinPoint | null; // dónde elegí unirme (si tengo reserva)
+  isMine?: boolean;             // soy el conductor
+  pendingRequests?: number;     // solo para el conductor
+  acceptedPassengers?: number;  // solo para el conductor
 }
 
 export interface ReservationDTO {
@@ -162,16 +165,18 @@ export interface ReservationDTO {
   passengerName: string;
   passengerAffiliation?: string;
   passengerPhoto?: string | null;
+  passengerPhone?: string | null; // solo con reserva aceptada (RNF-12)
   status: ReservationStatus;
   createdAt: string;
   requestedAt?: string;
   respondedAt?: string | null;
   cancelledAt?: string | null;
   lateCancellation?: boolean; // RN-06: < 20 min antes de salida
+  joinPoint?: JoinPoint | null; // dónde se une el pasajero
   trip?: TripDTO;
 }
 
-/** Notificación dentro de la aplicación con límite de 72 horas */
+/** Notificación dentro de la aplicación (GET /api/me/notificaciones, retención 72 h) */
 export type NotificationType =
   | 'solicitud_recibida'
   | 'solicitud_aceptada'
@@ -179,32 +184,31 @@ export type NotificationType =
   | 'solicitud_cancelada'
   | 'lugar_cancelado'
   | 'viaje_cancelado'
-  | 'viaje_proximo';
+  | 'viaje_lleno'       // lista de espera: el viaje se llenó
+  | 'lugar_liberado';   // lista de espera: se liberó un lugar
 
 export interface NotificationItem {
   id: string;
-  userId: string;
   type: NotificationType;
   title: string;
   message: string;
-  createdAt: string;          // ISO-8601 para calcular antigüedad de 72 horas
+  critical: boolean;          // cancelaciones y rechazos: se muestran con alerta destacada
   read: boolean;
-  relatedTripId?: string;
-  relatedReservationId?: string;
+  createdAt: string;          // ISO-8601
+  tripId: string | null;
+  reservationId: string | null;
 }
 
-/** Evento para preparación de notificación por correo */
-export interface EmailNotificationEvent {
-  id: string;
-  recipientEmail: string;
-  recipientName: string;
-  subject: string;
-  summary: string;
-  event: NotificationType;
-  tripOrigin: string;
-  tripDestination: string;
-  departureTime: string;
-  timestamp: string;
+/** Insignias del panel principal. */
+export interface NotificationsSummary {
+  newTrips: number;         // viajes publicados desde la última visita a la búsqueda
+  pendingRequests: number;  // solicitudes sin responder en mis viajes (conductor)
+}
+
+export interface NotificationsResponse {
+  items: NotificationItem[];
+  unread: number;
+  summary: NotificationsSummary;
 }
 
 export interface ApiErrorBody {

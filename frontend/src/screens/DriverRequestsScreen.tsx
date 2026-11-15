@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
+  Linking,
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Modal,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Header } from '../components/Header';
@@ -15,8 +15,11 @@ import {
   getDriverReservations,
   acceptReservationRequest,
   rejectReservationRequest,
-} from '../services/tripStorage';
+  errorMessage,
+  isWaitlisted,
+} from '../services/tripService';
 import type { ReservationDTO, UserDTO } from '../types/api';
+import { useNotifications } from '../hooks/useNotifications';
 
 interface DriverRequestsScreenProps {
   currentUser: UserDTO;
@@ -32,16 +35,27 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
   const [activeTab, setActiveTab] = useState<TabFilter>('pendiente');
   const [reservations, setReservations] = useState<ReservationDTO[]>([]);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const { showAlert, summary } = useNotifications();
   const [feedbackMessage, setFeedbackMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  const loadRequests = () => {
-    const list = getDriverReservations(currentUser.id);
-    setReservations(list);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadRequests = async () => {
+    setIsLoading(true);
+    try {
+      setReservations(await getDriverReservations(currentUser));
+    } catch (err) {
+      setFeedbackMessage({ text: errorMessage(err), type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  // Recarga al entrar y cada vez que cambia el número de solicitudes pendientes (llegó una nueva).
   useEffect(() => {
     loadRequests();
-  }, [currentUser.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser.id, summary.pendingRequests]);
 
   const filteredReservations = useMemo(() => {
     if (activeTab === 'todas') return reservations;
@@ -55,38 +69,31 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
     return reservations.filter((r) => r.status === 'pendiente' || r.status === 'solicitada').length;
   }, [reservations]);
 
-  const handleAccept = async (reservationId: string) => {
+  const respond = async (reservationId: string, action: 'accept' | 'reject') => {
+    const passenger = reservations.find((r) => r.id === reservationId)?.passengerName ?? 'El pasajero';
     setActionLoadingId(reservationId);
     setFeedbackMessage(null);
-
-    // Pequeño retardo natural de interacción
-    setTimeout(() => {
-      const res = acceptReservationRequest(reservationId);
-      setActionLoadingId(null);
-      if (res.ok) {
-        setFeedbackMessage({ text: res.message, type: 'success' });
-        loadRequests();
+    try {
+      if (action === 'accept') {
+        await acceptReservationRequest(reservationId);
+        setFeedbackMessage({ text: 'Solicitud aceptada y lugar asignado.', type: 'success' });
+        showAlert({ tone: 'success', title: 'Pasajero aceptado', message: `${passenger} ya tiene su lugar y fue notificado.` });
       } else {
-        setFeedbackMessage({ text: res.message, type: 'error' });
-      }
-    }, 400);
-  };
-
-  const handleReject = async (reservationId: string) => {
-    setActionLoadingId(reservationId);
-    setFeedbackMessage(null);
-
-    setTimeout(() => {
-      const res = rejectReservationRequest(reservationId);
-      setActionLoadingId(null);
-      if (res.ok) {
+        await rejectReservationRequest(reservationId);
         setFeedbackMessage({ text: 'Solicitud rechazada.', type: 'success' });
-        loadRequests();
-      } else {
-        setFeedbackMessage({ text: res.message, type: 'error' });
+        showAlert({ tone: 'warning', title: 'Solicitud rechazada', message: `Avisamos a ${passenger} para que busque otro viaje.` });
       }
-    }, 400);
+      await loadRequests();
+    } catch (err) {
+      setFeedbackMessage({ text: errorMessage(err), type: 'error' });
+      showAlert({ tone: 'warning', title: 'No se pudo responder la solicitud', message: errorMessage(err) });
+    } finally {
+      setActionLoadingId(null);
+    }
   };
+
+  const handleAccept = (reservationId: string) => respond(reservationId, 'accept');
+  const handleReject = (reservationId: string) => respond(reservationId, 'reject');
 
   const getStatusBadge = (status: ReservationDTO['status']) => {
     switch (status) {
@@ -209,7 +216,11 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
         </View>
 
         {/* Lista de solicitudes */}
-        {filteredReservations.length === 0 ? (
+        {isLoading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={THEME.colors.primary} />
+          </View>
+        ) : filteredReservations.length === 0 ? (
           <View style={styles.emptyCard}>
             <MaterialCommunityIcons
               name="inbox-outline"
@@ -225,8 +236,12 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
           </View>
         ) : (
           filteredReservations.map((res) => {
-            const badge = getStatusBadge(res.status);
+            const waiting = res.trip ? isWaitlisted(res.status, res.trip) : false;
+            const badge = waiting
+              ? { label: 'En espera · viaje lleno', bg: THEME.colors.warningBg, color: THEME.colors.warning, icon: 'account-clock' }
+              : getStatusBadge(res.status);
             const isActing = actionLoadingId === res.id;
+            const jp = res.joinPoint;
             const reqDate = new Date(res.requestedAt || res.createdAt).toLocaleDateString('es-MX', {
               day: 'numeric',
               month: 'short',
@@ -279,6 +294,63 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                   <Text style={styles.metaText}>Solicitado el {reqDate}</Text>
                 </View>
 
+                {res.trip ? (
+                  <View style={styles.metaRow}>
+                    <MaterialCommunityIcons name="map-marker-path" size={16} color={THEME.colors.textMuted} />
+                    <Text style={styles.metaText} numberOfLines={2}>
+                      {res.trip.origin.text} → {res.trip.destination.text} ·{' '}
+                      {new Date(res.trip.departureAt).toLocaleString('es-MX', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Dónde se une el pasajero */}
+                {jp ? (
+                  <View style={[styles.joinBox, jp.type === 'proposed' && styles.joinBoxProposed]}>
+                    <MaterialCommunityIcons
+                      name={jp.type === 'driver' ? 'map-marker-check' : 'map-marker-star'}
+                      size={20}
+                      color={jp.type === 'driver' ? THEME.colors.primary : THEME.colors.accentDark}
+                    />
+                    <View style={styles.joinBody}>
+                      <Text style={styles.joinLabel}>
+                        {jp.type === 'driver' ? 'Se une en tu punto de encuentro' : 'Propone otro punto de la ruta'}
+                      </Text>
+                      <Text style={styles.joinName}>{jp.name}</Text>
+                      {jp.note ? <Text style={styles.joinNote}>“{jp.note}”</Text> : null}
+                      {jp.type === 'proposed' && (
+                        <TouchableOpacity
+                          onPress={() => Linking.openURL(`https://www.openstreetmap.org/?mlat=${jp.lat}&mlon=${jp.lng}#map=18/${jp.lat}/${jp.lng}`)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.joinMapLink}>Ver punto en el mapa ›</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                ) : null}
+
+                {waiting && (
+                  <View style={styles.metaRow}>
+                    <MaterialCommunityIcons name="information-outline" size={16} color={THEME.colors.warning} />
+                    <Text style={[styles.metaText, { color: THEME.colors.warning }]}>
+                      Tu viaje está lleno. Podrás aceptarlo si alguien cancela; ya le avisamos que está en lista de espera.
+                    </Text>
+                  </View>
+                )}
+
+                {res.status === 'aceptada' && res.passengerPhone ? (
+                  <View style={styles.metaRow}>
+                    <MaterialCommunityIcons name="phone" size={16} color={THEME.colors.textMuted} />
+                    <Text style={styles.metaText}>Teléfono: {res.passengerPhone}</Text>
+                  </View>
+                ) : null}
+
                 {/* Botones de Acción (Si está pendiente o solicitada) */}
                 {(res.status === 'pendiente' || res.status === 'solicitada') && (
                   <View style={styles.actionButtonsRow}>
@@ -303,9 +375,9 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[styles.acceptBtn, isActing && styles.btnDisabled]}
+                      style={[styles.acceptBtn, (isActing || waiting) && styles.btnDisabled]}
                       onPress={() => handleAccept(res.id)}
-                      disabled={isActing}
+                      disabled={isActing || waiting}
                       activeOpacity={0.8}
                     >
                       {isActing ? (
@@ -333,6 +405,53 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
+  joinBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 10,
+    marginBottom: 12,
+    borderRadius: THEME.borderRadius.md,
+    backgroundColor: THEME.colors.primarySoft,
+    borderWidth: 1,
+    borderColor: 'rgba(107, 23, 54, 0.2)',
+  },
+  joinBoxProposed: {
+    backgroundColor: '#FDF8E8',
+    borderColor: THEME.colors.accentLight,
+  },
+  joinBody: {
+    flex: 1,
+  },
+  joinLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: THEME.colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  joinName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    marginTop: 1,
+  },
+  joinNote: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    color: THEME.colors.textSecondary,
+    marginTop: 2,
+  },
+  joinMapLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.colors.primary,
+    marginTop: 4,
+  },
+  loadingBox: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -515,6 +634,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   metaText: {
+    flexShrink: 1,
     fontSize: 12,
     color: THEME.colors.textMuted,
   },
