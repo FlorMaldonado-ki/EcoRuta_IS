@@ -9,16 +9,10 @@ import {
   FlatList,
   Animated,
   PanResponder,
-  Dimensions,
+  useWindowDimensions,
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-// Posición Y del bottom sheet: distancia desde la parte superior de la pantalla
-const SHEET_HALF = SCREEN_HEIGHT * 0.52;   // media pantalla (~52% desde arriba)
-const SHEET_FULL = 80;                      // casi pantalla completa (80px desde arriba)
-const SNAP_THRESHOLD = 100;                 // px de arrastre para hacer snap
 import { Header } from '../components/Header';
 import { TripCard } from '../components/TripCard';
 import { SelectModalField } from '../components/SelectModalField';
@@ -38,6 +32,11 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
   onSelectTrip,
   onBackToHome,
 }) => {
+  const { height: screenHeight } = useWindowDimensions();
+  // Altura del bottom sheet: media pantalla (~48%) o casi pantalla completa
+  const HALF_HEIGHT = Math.round(screenHeight * 0.48);
+  const FULL_HEIGHT = Math.round(screenHeight - 110);
+
   // Estados de filtros
   const [selectedDirection, setSelectedDirection] = useState<'all' | TripDirection>('all');
   const [selectedCampus, setSelectedCampus] = useState<string>('all');
@@ -52,47 +51,61 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [trips, setTrips] = useState<TripDTO[]>([]);
 
-  // ── Bottom Sheet ────────────────────────────────────────────────────────
+  // ── Bottom Sheet (Anclado al fondo con altura animada) ─────────────────
   const [sheetExpanded, setSheetExpanded] = useState(false); // false = media, true = full
-  const sheetY = useRef(new Animated.Value(SHEET_HALF)).current;
-  const dragStartY = useRef(SHEET_HALF);
+  const sheetHeight = useRef(new Animated.Value(HALF_HEIGHT)).current;
+  const dragStartHeight = useRef(HALF_HEIGHT);
+
+  // Actualizar altura si cambia el tamaño de pantalla
+  useEffect(() => {
+    const target = sheetExpanded ? FULL_HEIGHT : HALF_HEIGHT;
+    sheetHeight.setValue(target);
+    dragStartHeight.current = target;
+  }, [screenHeight, sheetExpanded, FULL_HEIGHT, HALF_HEIGHT]);
 
   const snapTo = useCallback((expanded: boolean) => {
-    const toY = expanded ? SHEET_FULL : SHEET_HALF;
-    Animated.spring(sheetY, {
-      toValue: toY,
+    const toHeight = expanded ? FULL_HEIGHT : HALF_HEIGHT;
+    Animated.spring(sheetHeight, {
+      toValue: toHeight,
       useNativeDriver: false,
       bounciness: 4,
+      speed: 14,
     }).start();
     setSheetExpanded(expanded);
-    dragStartY.current = toY;
-  }, [sheetY]);
+    dragStartHeight.current = toHeight;
+  }, [sheetHeight, FULL_HEIGHT, HALF_HEIGHT]);
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 5,
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 8,
       onPanResponderGrant: () => {
-        // Captura el valor actual antes de empezar a arrastrar
-        sheetY.stopAnimation((val) => {
-          dragStartY.current = val;
-          sheetY.setValue(val);
+        sheetHeight.stopAnimation((val) => {
+          dragStartHeight.current = val;
+          sheetHeight.setValue(val);
         });
       },
       onPanResponderMove: (_, gs) => {
-        const newY = dragStartY.current + gs.dy;
-        // Límites: no puede ir más arriba de SHEET_FULL ni más abajo de SHEET_HALF + 60
-        const clamped = Math.max(SHEET_FULL, Math.min(SHEET_HALF + 60, newY));
-        sheetY.setValue(clamped);
+        // En vista anclada al fondo (bottom: 0):
+        // Arrastrar hacia arriba (gs.dy < 0) aumenta la altura.
+        // Arrastrar hacia abajo (gs.dy > 0) disminuye la altura.
+        const newHeight = dragStartHeight.current - gs.dy;
+        const clamped = Math.max(HALF_HEIGHT - 60, Math.min(FULL_HEIGHT + 30, newHeight));
+        sheetHeight.setValue(clamped);
       },
       onPanResponderRelease: (_, gs) => {
-        const currentPos = dragStartY.current;
-        if (currentPos <= SHEET_HALF) {
-          // Estaba en media pantalla: sube si arrastró >threshold hacia arriba
-          snapTo(gs.dy < -SNAP_THRESHOLD ? true : false);
+        const currentHeight = dragStartHeight.current - gs.dy;
+        const midpoint = (HALF_HEIGHT + FULL_HEIGHT) / 2;
+
+        // Decidir por velocidad o por posición
+        if (gs.vy < -0.4) {
+          snapTo(true);
+        } else if (gs.vy > 0.4) {
+          snapTo(false);
+        } else if (currentHeight > midpoint) {
+          snapTo(true);
         } else {
-          // Estaba en pantalla completa: baja si arrastró >threshold hacia abajo
-          snapTo(gs.dy > SNAP_THRESHOLD ? false : true);
+          snapTo(false);
         }
       },
     })
@@ -224,219 +237,234 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Pestañas rápidas de sentido */}
-      <View style={styles.directionTabs}>
-        <TouchableOpacity
-          style={[styles.dirTab, selectedDirection === 'all' && styles.dirTabActive]}
-          onPress={() => setSelectedDirection('all')}
-        >
-          <Text style={[styles.dirTabText, selectedDirection === 'all' && styles.dirTabTextActive]}>
-            Todos
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.dirTab, selectedDirection === 'to_campus' && styles.dirTabActive]}
-          onPress={() => setSelectedDirection('to_campus')}
-        >
-          <MaterialCommunityIcons
-            name="school"
-            size={14}
-            color={selectedDirection === 'to_campus' ? '#fff' : THEME.colors.primary}
-          />
-          <Text
-            style={[styles.dirTabText, selectedDirection === 'to_campus' && styles.dirTabTextActive]}
+      {/* Scroll de contenido superior (sentido + filtros detallados) */}
+      <ScrollView
+        style={styles.topScrollArea}
+        contentContainerStyle={[
+          styles.topScrollContent,
+          { paddingBottom: HALF_HEIGHT + 40 },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Pestañas rápidas de sentido */}
+        <View style={styles.directionTabs}>
+          <TouchableOpacity
+            style={[styles.dirTab, selectedDirection === 'all' && styles.dirTabActive]}
+            onPress={() => setSelectedDirection('all')}
           >
-            Hacia el Campus
-          </Text>
-        </TouchableOpacity>
+            <Text style={[styles.dirTabText, selectedDirection === 'all' && styles.dirTabTextActive]}>
+              Todos
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.dirTab, selectedDirection === 'from_campus' && styles.dirTabActive]}
-          onPress={() => setSelectedDirection('from_campus')}
-        >
-          <MaterialCommunityIcons
-            name="home"
-            size={14}
-            color={selectedDirection === 'from_campus' ? '#fff' : THEME.colors.primary}
-          />
-          <Text
-            style={[styles.dirTabText, selectedDirection === 'from_campus' && styles.dirTabTextActive]}
+          <TouchableOpacity
+            style={[styles.dirTab, selectedDirection === 'to_campus' && styles.dirTabActive]}
+            onPress={() => setSelectedDirection('to_campus')}
           >
-            Desde el Campus
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Panel colapsable de filtros detallados */}
-      {isFilterExpanded && (
-        <View style={styles.filterCard}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterChipRow}>
-            {/* Filtros de Fecha */}
-            <TouchableOpacity
-              style={[styles.chip, selectedDateFilter === 'all' && styles.chipActive]}
-              onPress={() => setSelectedDateFilter('all')}
+            <MaterialCommunityIcons
+              name="school"
+              size={14}
+              color={selectedDirection === 'to_campus' ? '#fff' : THEME.colors.primary}
+            />
+            <Text
+              style={[styles.dirTabText, selectedDirection === 'to_campus' && styles.dirTabTextActive]}
             >
-              <Text style={[styles.chipText, selectedDateFilter === 'all' && styles.chipTextActive]}>
-                Cualquier fecha
-              </Text>
-            </TouchableOpacity>
+              Hacia el Campus
+            </Text>
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.chip, selectedDateFilter === 'today' && styles.chipActive]}
-              onPress={() => setSelectedDateFilter('today')}
+          <TouchableOpacity
+            style={[styles.dirTab, selectedDirection === 'from_campus' && styles.dirTabActive]}
+            onPress={() => setSelectedDirection('from_campus')}
+          >
+            <MaterialCommunityIcons
+              name="home"
+              size={14}
+              color={selectedDirection === 'from_campus' ? '#fff' : THEME.colors.primary}
+            />
+            <Text
+              style={[styles.dirTabText, selectedDirection === 'from_campus' && styles.dirTabTextActive]}
             >
-              <Text style={[styles.chipText, selectedDateFilter === 'today' && styles.chipTextActive]}>
-                Hoy
-              </Text>
-            </TouchableOpacity>
+              Desde el Campus
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-            <TouchableOpacity
-              style={[styles.chip, selectedDateFilter === 'tomorrow' && styles.chipActive]}
-              onPress={() => setSelectedDateFilter('tomorrow')}
-            >
-              <Text
-                style={[styles.chipText, selectedDateFilter === 'tomorrow' && styles.chipTextActive]}
+        {/* Panel colapsable de filtros detallados */}
+        {isFilterExpanded && (
+          <View style={styles.filterCard}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterChipRow}>
+              {/* Filtros de Fecha */}
+              <TouchableOpacity
+                style={[styles.chip, selectedDateFilter === 'all' && styles.chipActive]}
+                onPress={() => setSelectedDateFilter('all')}
               >
-                Mañana
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
+                <Text style={[styles.chipText, selectedDateFilter === 'all' && styles.chipTextActive]}>
+                  Cualquier fecha
+                </Text>
+              </TouchableOpacity>
 
-          {/* Rango de Horario de Salida */}
-          <View style={styles.filterSubSection}>
-            <Text style={styles.filterSubLabel}>Horario de salida:</Text>
-            <View style={styles.timeButtonsRow}>
-              {[
-                { key: 'all', label: 'Cualquiera' },
-                { key: 'morning', label: 'Mañana (06:00 - 12:00)' },
-                { key: 'afternoon', label: 'Tarde (12:00 - 18:00)' },
-                { key: 'evening', label: 'Noche (18:00 - 22:00)' },
-              ].map((t) => (
-                <TouchableOpacity
-                  key={t.key}
-                  style={[styles.timeBtn, selectedTimeRange === t.key && styles.timeBtnActive]}
-                  onPress={() => setSelectedTimeRange(t.key)}
+              <TouchableOpacity
+                style={[styles.chip, selectedDateFilter === 'today' && styles.chipActive]}
+                onPress={() => setSelectedDateFilter('today')}
+              >
+                <Text style={[styles.chipText, selectedDateFilter === 'today' && styles.chipTextActive]}>
+                  Hoy
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.chip, selectedDateFilter === 'tomorrow' && styles.chipActive]}
+                onPress={() => setSelectedDateFilter('tomorrow')}
+              >
+                <Text
+                  style={[styles.chipText, selectedDateFilter === 'tomorrow' && styles.chipTextActive]}
                 >
-                  <Text
-                    style={[
-                      styles.timeBtnText,
-                      selectedTimeRange === t.key && styles.timeBtnTextActive,
-                    ]}
-                  >
-                    {t.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+                  Mañana
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
 
-          {/* Puntos de referencia oficiales del TecNM (Campus 1, Campus 2, Metalurgia) */}
-          <SelectModalField
-            label="Punto del campus / Destino"
-            placeholder="Selecciona Campus 1, 2 o Metalurgia"
-            iconName="map-marker-radius"
-            options={campusOptions}
-            value={
-              Object.keys(campusMap).find((k) => campusMap[k] === selectedCampus) || 'Todos los campus'
-            }
-            onSelect={(val) => setSelectedCampus(campusMap[val] || 'all')}
-          />
-
-          {/* Zona de Morelia para cálculo de proximidad */}
-          <SelectModalField
-            label="Proximidad por zona de Morelia"
-            placeholder="Selecciona zona para ordenar por cercanía"
-            iconName="crosshairs-gps"
-            options={zoneOptions}
-            value={selectedZone === 'all' ? 'Cualquier zona' : selectedZone}
-            onSelect={(val) => setSelectedZone(val === 'Cualquier zona' ? 'all' : val)}
-          />
-
-          {/* Radio de proximidad */}
-          {selectedZone !== 'all' && (
-            <View style={styles.radiusContainer}>
-              <Text style={styles.filterSubLabel}>Radio de cercanía máximo:</Text>
-              <View style={styles.radiusRow}>
-                {[1, 3, 5, 10].map((rad) => (
+            {/* Rango de Horario de Salida */}
+            <View style={styles.filterSubSection}>
+              <Text style={styles.filterSubLabel}>Horario de salida:</Text>
+              <View style={styles.timeButtonsRow}>
+                {[
+                  { key: 'all', label: 'Cualquiera' },
+                  { key: 'morning', label: 'Mañana (06:00 - 12:00)' },
+                  { key: 'afternoon', label: 'Tarde (12:00 - 18:00)' },
+                  { key: 'evening', label: 'Noche (18:00 - 22:00)' },
+                ].map((t) => (
                   <TouchableOpacity
-                    key={rad}
-                    style={[styles.radiusBtn, selectedRadius === rad && styles.radiusBtnActive]}
-                    onPress={() => setSelectedRadius(selectedRadius === rad ? 0 : rad)}
+                    key={t.key}
+                    style={[styles.timeBtn, selectedTimeRange === t.key && styles.timeBtnActive]}
+                    onPress={() => setSelectedTimeRange(t.key)}
                   >
                     <Text
                       style={[
-                        styles.radiusBtnText,
-                        selectedRadius === rad && styles.radiusBtnTextActive,
+                        styles.timeBtnText,
+                        selectedTimeRange === t.key && styles.timeBtnTextActive,
                       ]}
                     >
-                      {rad} km
+                      {t.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
-          )}
 
-          {/* Lugares mínimos requeridos */}
-          <View style={styles.seatsFilterRow}>
-            <Text style={styles.filterSubLabel}>Lugares requeridos:</Text>
-            <View style={styles.seatsCountRow}>
-              {[1, 2, 3, 4].map((s) => (
-                <TouchableOpacity
-                  key={s}
-                  style={[styles.seatCountBtn, minSeats === s && styles.seatCountBtnActive]}
-                  onPress={() => setMinSeats(s)}
-                >
-                  <Text
-                    style={[
-                      styles.seatCountText,
-                      minSeats === s && styles.seatCountTextActive,
-                    ]}
+            {/* Puntos de referencia oficiales del TecNM (Campus 1, Campus 2, Metalurgia) */}
+            <SelectModalField
+              label="Punto del campus / Destino"
+              placeholder="Selecciona Campus 1, 2 o Metalurgia"
+              iconName="map-marker-radius"
+              options={campusOptions}
+              value={
+                Object.keys(campusMap).find((k) => campusMap[k] === selectedCampus) || 'Todos los campus'
+              }
+              onSelect={(val) => setSelectedCampus(campusMap[val] || 'all')}
+            />
+
+            {/* Zona de Morelia para cálculo de proximidad */}
+            <SelectModalField
+              label="Proximidad por zona de Morelia"
+              placeholder="Selecciona zona para ordenar por cercanía"
+              iconName="crosshairs-gps"
+              options={zoneOptions}
+              value={selectedZone === 'all' ? 'Cualquier zona' : selectedZone}
+              onSelect={(val) => setSelectedZone(val === 'Cualquier zona' ? 'all' : val)}
+            />
+
+            {/* Radio de proximidad */}
+            {selectedZone !== 'all' && (
+              <View style={styles.radiusContainer}>
+                <Text style={styles.filterSubLabel}>Radio de cercanía máximo:</Text>
+                <View style={styles.radiusRow}>
+                  {[1, 3, 5, 10].map((rad) => (
+                    <TouchableOpacity
+                      key={rad}
+                      style={[styles.radiusBtn, selectedRadius === rad && styles.radiusBtnActive]}
+                      onPress={() => setSelectedRadius(selectedRadius === rad ? 0 : rad)}
+                    >
+                      <Text
+                        style={[
+                          styles.radiusBtnText,
+                          selectedRadius === rad && styles.radiusBtnTextActive,
+                        ]}
+                      >
+                        {rad} km
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Lugares mínimos requeridos */}
+            <View style={styles.seatsFilterRow}>
+              <Text style={styles.filterSubLabel}>Lugares requeridos:</Text>
+              <View style={styles.seatsCountRow}>
+                {[1, 2, 3, 4].map((s) => (
+                  <TouchableOpacity
+                    key={s}
+                    style={[styles.seatCountBtn, minSeats === s && styles.seatCountBtnActive]}
+                    onPress={() => setMinSeats(s)}
                   >
-                    {s}+
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.seatCountText,
+                        minSeats === s && styles.seatCountTextActive,
+                      ]}
+                    >
+                      {s}+
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
-          </View>
 
-          <TouchableOpacity style={styles.resetBtn} onPress={handleResetFilters}>
-            <MaterialCommunityIcons name="filter-remove-outline" size={16} color={THEME.colors.error} />
-            <Text style={styles.resetBtnText}>Limpiar todos los filtros</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+            <TouchableOpacity style={styles.resetBtn} onPress={handleResetFilters}>
+              <MaterialCommunityIcons name="filter-remove-outline" size={16} color={THEME.colors.error} />
+              <Text style={styles.resetBtnText}>Limpiar todos los filtros</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
 
       {/* ── Bottom Sheet de Resultados ─────────────────────────────────────── */}
-      <Animated.View style={[styles.bottomSheet, { top: sheetY }]}>
+      <Animated.View style={[styles.bottomSheet, { height: sheetHeight }]}>
 
-        {/* Asa de arrastre — toca para hacer snap, o arrastra */}
+        {/* Asa de arrastre y encabezado interactivo */}
         <View style={styles.sheetHandleArea} {...panResponder.panHandlers}>
           <View style={styles.sheetHandle} />
           <View style={styles.resultsHeader}>
-            <Text style={styles.resultsCount}>
-              {trips.length} {trips.length === 1 ? 'viaje disponible' : 'viajes disponibles'}
-            </Text>
-            <View style={styles.resultsHeaderRight}>
-              <Text style={styles.orderLabel}>Horario y cercanía</Text>
-              {/* Botón de expand/collapse */}
-              <TouchableOpacity
-                style={styles.expandBtn}
-                onPress={() => snapTo(!sheetExpanded)}
-                activeOpacity={0.7}
-              >
-                <MaterialCommunityIcons
-                  name={sheetExpanded ? 'chevron-down' : 'chevron-up'}
-                  size={22}
-                  color={THEME.colors.primary}
-                />
-              </TouchableOpacity>
+            <View style={styles.resultsHeaderLeft}>
+              <Text style={styles.resultsCount}>
+                {trips.length} {trips.length === 1 ? 'viaje disponible' : 'viajes disponibles'}
+              </Text>
+              <Text style={styles.orderLabel}>Orden: horario y cercanía</Text>
             </View>
+
+            {/* Botón táctil para expandir / colapsar */}
+            <TouchableOpacity
+              style={styles.expandPill}
+              onPress={() => snapTo(!sheetExpanded)}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons
+                name={sheetExpanded ? 'chevron-down' : 'chevron-up'}
+                size={18}
+                color={THEME.colors.primary}
+              />
+              <Text style={styles.expandPillText}>
+                {sheetExpanded ? 'Reducir' : 'Pantalla completa'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Lista de viajes */}
+        {/* Lista de viajes con flex: 1 para scroll completo */}
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={THEME.colors.primary} />
@@ -444,11 +472,13 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
           </View>
         ) : (
           <FlatList
+            style={styles.tripsList}
             data={trips}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => <TripCard trip={item} onPress={() => onSelectTrip(item)} />}
             contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
+            keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <MaterialCommunityIcons name="car-off" size={60} color={THEME.colors.textMuted} />
@@ -514,6 +544,12 @@ const styles = StyleSheet.create({
   },
   filterToggleTextActive: {
     color: '#FFFFFF',
+  },
+  topScrollArea: {
+    flex: 1,
+  },
+  topScrollContent: {
+    paddingBottom: 20,
   },
   directionTabs: {
     flexDirection: 'row',
@@ -687,25 +723,85 @@ const styles = StyleSheet.create({
     color: THEME.colors.error,
     fontWeight: '600',
   },
+  bottomSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: THEME.colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: THEME.colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 16,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
+  sheetHandleArea: {
+    paddingTop: 10,
+    paddingBottom: 10,
+    paddingHorizontal: 16,
+    backgroundColor: THEME.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.colors.border,
+    alignItems: 'center',
+  },
+  sheetHandle: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    marginBottom: 8,
+  },
   resultsHeader: {
+    width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+  },
+  resultsHeaderLeft: {
+    flex: 1,
   },
   resultsCount: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
     color: THEME.colors.textPrimary,
   },
   orderLabel: {
     fontSize: 11,
     color: THEME.colors.textMuted,
     fontStyle: 'italic',
+    marginTop: 2,
+  },
+  expandPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: THEME.borderRadius.pill,
+    backgroundColor: THEME.colors.primarySoft,
+    borderWidth: 1,
+    borderColor: THEME.colors.primary,
+  },
+  expandPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.colors.primary,
+  },
+  tripsList: {
+    flex: 1,
   },
   listContent: {
-    paddingBottom: 24,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 50,
   },
   loadingContainer: {
     flex: 1,
