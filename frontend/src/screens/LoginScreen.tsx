@@ -98,14 +98,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
-  // Cuentas demo del seed (backend/db/seeds/001_demo.sql). Solo en desarrollo.
-  const handleQuickFill = (role: 'alumno' | 'maestro') => {
-    setEmail(role === 'alumno' ? 'demo.ana@morelia.tecnm.mx' : 'demo.luis@morelia.tecnm.mx');
-    setPassword('Demo1234');
-    setEmailError(undefined);
-    setPasswordError(undefined);
-  };
-
   return (
     <KeyboardAvoidingView
       style={styles.keyboardAvoid}
@@ -190,32 +182,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 </View>
               )}
             </TouchableOpacity>
-
-            {/* Atajos de prueba (cuentas del seed). Solo en desarrollo: no aparecen en el APK de producción. */}
-            {__DEV__ && (
-            <View style={styles.quickFillSection}>
-              <Text style={styles.quickFillLabel}>Cuentas demo (seed):</Text>
-              <View style={styles.quickButtonsRow}>
-                <TouchableOpacity
-                  style={styles.quickBtn}
-                  onPress={() => handleQuickFill('alumno')}
-                  activeOpacity={0.7}
-                >
-                  <MaterialCommunityIcons name="school" size={14} color={THEME.colors.primary} />
-                  <Text style={styles.quickBtnText}>Cuenta Alumno</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.quickBtn}
-                  onPress={() => handleQuickFill('maestro')}
-                  activeOpacity={0.7}
-                >
-                  <MaterialCommunityIcons name="account-tie" size={14} color={THEME.colors.primary} />
-                  <Text style={styles.quickBtnText}>Cuenta Maestro</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            )}
 
             {/* Enlace de navegación hacia Registro */}
             <View style={styles.registerPrompt}>
@@ -321,40 +287,6 @@ const styles = StyleSheet.create({
     color: THEME.colors.textInverse,
     fontSize: 16,
     fontWeight: '700',
-  },
-  quickFillSection: {
-    marginTop: 22,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: THEME.colors.border,
-  },
-  quickFillLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: THEME.colors.textSecondary,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  quickButtonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  quickBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: THEME.colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: THEME.colors.border,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: THEME.borderRadius.sm,
-  },
-  quickBtnText: {
-    fontSize: 12,
-    color: THEME.colors.primary,
-    fontWeight: '600',
   },
   registerPrompt: {
     flexDirection: 'row',

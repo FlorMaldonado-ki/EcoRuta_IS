@@ -10,6 +10,12 @@ export interface InteractiveMapProps {
   meetingPoints?: MeetingPoint[];
   mode?: 'view' | 'edit_meeting_points';
   onMapClick?: (coords: { lat: number; lng: number }) => void;
+  /** Punto del conductor resaltado (el que eligió el pasajero). */
+  selectedPointId?: string | null;
+  /** Al tocar un punto de encuentro en el mapa (para elegirlo). */
+  onPointPress?: (pointId: string) => void;
+  /** Punto propuesto por el pasajero (marcador ★). */
+  joinPoint?: { lat: number; lng: number; name?: string } | null;
   height?: number;
 }
 
@@ -19,28 +25,36 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   meetingPoints = [],
   mode = 'view',
   onMapClick,
+  selectedPointId = null,
+  onPointPress,
+  joinPoint = null,
   height = 320,
 }) => {
   const iframeRef = useRef<any>(null);
 
-  // Escuchar mensajes de clics en el mapa desde el iframe (Web)
+  // Escuchar mensajes del iframe (Web): clic en el mapa (modo edición) o en un punto de encuentro.
   useEffect(() => {
-    if (Platform.OS !== 'web' || mode !== 'edit_meeting_points') return;
+    const listensClicks = mode === 'edit_meeting_points' && !!onMapClick;
+    if (Platform.OS !== 'web' || (!listensClicks && !onPointPress)) return;
 
     const handleMessage = (event: MessageEvent) => {
+      // Solo mensajes de ESTE mapa (puede haber varios en pantalla).
+      if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        if (data && data.type === 'MAP_CLICK' && data.lat && data.lng) {
+        if (listensClicks && data && data.type === 'MAP_CLICK' && data.lat && data.lng) {
           onMapClick?.({ lat: Number(data.lat), lng: Number(data.lng) });
+        } else if (data && data.type === 'MAP_POINT' && typeof data.id === 'string') {
+          onPointPress?.(data.id);
         }
-      } catch (_e) {
+      } catch {
         // Ignorar mensajes no JSON de extensiones del navegador
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [mode, onMapClick]);
+  }, [mode, onMapClick, onPointPress]);
 
   // Generar HTML autosuficiente con Leaflet + OpenStreetMap + OSRM
   const generateLeafletHtml = () => {
@@ -48,6 +62,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const pointsJson = JSON.stringify(meetingPoints);
     const originJson = JSON.stringify(origin);
     const destJson = JSON.stringify(destination);
+    const selectedJson = JSON.stringify(selectedPointId);
+    const joinJson = JSON.stringify(joinPoint);
+    const pointsClickable = !!onPointPress;
 
     return `
       <!DOCTYPE html>
@@ -67,6 +84,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           .marker-origin { background-color: #15803D; }
           .marker-dest { background-color: #6B1736; }
           .marker-mp { background-color: #C59B27; color: #1E293B; font-weight: 800; }
+          .marker-mp-selected { background-color: #6B1736; color: #fff; border: 3px solid #C59B27;
+            box-shadow: 0 0 0 6px rgba(197,155,39,0.35), 0 2px 8px rgba(0,0,0,0.4); }
+          .marker-join { background-color: #6B1736; color: #F3E5AB; font-size: 15px; border: 3px solid #C59B27;
+            animation: pulse 1.6s ease-out infinite; }
+          @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(107,23,54,0.55); } 100% { box-shadow: 0 0 0 16px rgba(107,23,54,0); } }
           .leaflet-popup-content { font-family: system-ui, -apple-system, sans-serif; font-size: 12px; }
           .leaflet-popup-content h4 { margin: 0 0 4px 0; color: #6B1736; font-size: 13px; }
           .mode-badge {
@@ -86,6 +108,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           const dest = ${destJson};
           const meetingPoints = ${pointsJson};
           const isEditMode = ${isEditMode};
+          const selectedId = ${selectedJson};
+          const joinPoint = ${joinJson};
+          const pointsClickable = ${pointsClickable};
 
           // Inicializar mapa centrado en el promedio o en el origen
           const map = L.map('map', { zoomControl: true }).setView([origin.lat, origin.lng], 13);
@@ -127,17 +152,33 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           // Marcadores de puntos de encuentro
           meetingPoints.forEach((mp, index) => {
             const num = mp.order || (index + 1);
+            const isSelected = selectedId && mp.id === selectedId;
+            const size = isSelected ? 34 : 26;
             const iconMp = L.divIcon({
-              className: 'custom-div-icon marker-mp',
+              className: 'custom-div-icon ' + (isSelected ? 'marker-mp-selected' : 'marker-mp'),
               html: num.toString(),
-              iconSize: [26, 26],
-              iconAnchor: [13, 13]
+              iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2]
             });
-            L.marker([mp.lat, mp.lng], { icon: iconMp })
+            const marker = L.marker([mp.lat, mp.lng], { icon: iconMp, zIndexOffset: isSelected ? 1000 : 0 })
               .addTo(map)
-              .bindPopup('<h4>Punto de Encuentro #' + num + '</h4><b>' + (mp.name || 'Sin nombre') + '</b><br>' + (mp.description || '') + '<br><small>Coordenadas: ' + mp.lat.toFixed(5) + ', ' + mp.lng.toFixed(5) + '</small>');
+              .bindPopup('<h4>Punto de Encuentro #' + num + (isSelected ? ' · Elegido' : '') + '</h4><b>' + (mp.name || 'Sin nombre') + '</b><br>' + (mp.description || ''));
+            if (pointsClickable) {
+              marker.on('click', function() {
+                window.parent.postMessage(JSON.stringify({ type: 'MAP_POINT', id: mp.id }), '*');
+              });
+            }
             bounds.extend([mp.lat, mp.lng]);
           });
+
+          // Punto propuesto por el pasajero
+          if (joinPoint) {
+            const iconJoin = L.divIcon({ className: 'custom-div-icon marker-join', html: '★', iconSize: [32, 32], iconAnchor: [16, 16] });
+            L.marker([joinPoint.lat, joinPoint.lng], { icon: iconJoin, zIndexOffset: 1000 })
+              .addTo(map)
+              .bindPopup('<h4>Tu punto de unión</h4>' + (joinPoint.name || 'Punto propuesto'));
+            bounds.extend([joinPoint.lat, joinPoint.lng]);
+          }
 
           // Trazar ruta con OSRM y fallback a línea recta (RN-10 / RNF-29)
           const osrmUrl = 'https://router.project-osrm.org/route/v1/driving/' + origin.lng + ',' + origin.lat + ';' + dest.lng + ',' + dest.lat + '?overview=full&geometries=geojson';
@@ -150,7 +191,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 const routeLine = L.geoJSON(route.geometry, {
                   style: { color: '#6B1736', weight: 5, opacity: 0.85 }
                 }).addTo(map);
-                map.fitBounds(routeLine.getBounds(), { padding: [35, 35] });
+                map.fitBounds(routeLine.getBounds().extend(bounds), { padding: [35, 35] }); // incluye los puntos de encuentro
               } else {
                 throw new Error('Sin ruta OSRM');
               }
@@ -204,6 +245,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           </Text>
           <Text style={styles.nativeFallbackSubtext}>
             {meetingPoints.length} punto(s) de encuentro registrados
+            {joinPoint ? ' · tu punto de unión marcado' : ''}
           </Text>
           {mode === 'edit_meeting_points' && (
             <TouchableOpacity

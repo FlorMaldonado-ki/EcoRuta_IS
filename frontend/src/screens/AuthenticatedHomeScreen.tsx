@@ -10,7 +10,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Header } from '../components/Header';
 import { NotificationBell } from '../components/NotificationBell';
 import { NavigationDrawer, AppNavScreen } from '../components/NavigationDrawer';
-import { NotificationsCenterModal } from './NotificationsCenterModal';
 import { PassengerSearchScreen } from './PassengerSearchScreen';
 import { TripDetailScreen } from './TripDetailScreen';
 import { DriverProfileVehicleScreen } from './DriverProfileVehicleScreen';
@@ -21,7 +20,9 @@ import { DriverRequestsScreen } from './DriverRequestsScreen';
 import { MyTripsScreen } from './MyTripsScreen';
 import { THEME } from '../constants/theme';
 import { getCommunityImpact, getMyImpact } from '../services/catalogService';
-import { getNotifications, getUnreadNotificationCount, getDriverRoute } from '../services/tripStorage';
+import { getDriverRoute } from '../services/tripStorage';
+import { useNotifications, type NotifSection } from '../hooks/useNotifications';
+import { SectionBadge } from '../components/SectionBadge';
 import type { CommunityImpactDTO, MyImpactDTO, UserDTO, TripDTO, DriverRoute } from '../types/api';
 
 interface AuthenticatedHomeScreenProps {
@@ -40,6 +41,20 @@ type ActiveScreen =
   | 'driver_requests'
   | 'my_trips';
 
+/** Pantalla a la que lleva cada sección con insignia. */
+const SECTION_SCREEN: Record<NotifSection, ActiveScreen> = {
+  search: 'passenger_search',
+  myTrips: 'my_trips',
+  requests: 'driver_requests',
+};
+const SCREEN_SECTION: Partial<Record<ActiveScreen, NotifSection>> = {
+  passenger_search: 'search',
+  my_trips: 'myTrips',
+  driver_requests: 'requests',
+};
+
+const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+
 const formatKg = (kg: number) =>
   `${kg.toLocaleString('es-MX', { maximumFractionDigits: kg < 100 ? 2 : 0 })} kg`;
 
@@ -52,31 +67,34 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
   const [mine, setMine] = useState<MyImpactDTO | null>(null);
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>('home');
   const [selectedTrip, setSelectedTrip] = useState<TripDTO | null>(null);
+  // Pantalla a la que regresa el detalle del viaje (búsqueda o mis viajes)
+  const [detailReturnTo, setDetailReturnTo] = useState<ActiveScreen>('passenger_search');
   const [currentRoute, setCurrentRoute] = useState<DriverRoute | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const { unread: unreadCount, openCenter, badges, markSectionSeen, registerNavigator } = useNotifications();
 
   useEffect(() => {
     getCommunityImpact().then(setCommunity).catch(() => setCommunity(null));
     getMyImpact().then(setMine).catch(() => setMine(null));
   }, []);
 
-  // Refresca badge de notificaciones cada vez que vuelve al home
-  useEffect(() => {
-    if (activeScreen === 'home') {
-      setUnreadCount(getUnreadNotificationCount());
-    }
-  }, [activeScreen]);
-
   const navigate = (screen: ActiveScreen) => {
     setActiveScreen(screen);
     setDrawerOpen(false);
+    // Al entrar a una sección su insignia se da por vista.
+    const section = SCREEN_SECTION[screen];
+    if (section) markSectionSeen(section);
   };
+
+  // Las alertas y la bandeja pueden llevar directo a una sección.
+  useEffect(() => {
+    registerNavigator((section) => navigate(SECTION_SCREEN[section]));
+    return () => registerNavigator(null);
+  });
 
   const handleDrawerNavigate = (screen: AppNavScreen) => {
     if (screen === 'notifications') {
-      setNotificationsOpen(true);
+      openCenter();
       setDrawerOpen(false);
       return;
     }
@@ -109,6 +127,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
         onBackToHome={goHome}
         onSelectTrip={(trip) => {
           setSelectedTrip(trip);
+          setDetailReturnTo('passenger_search');
           setActiveScreen('trip_detail');
         }}
       />
@@ -120,7 +139,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
       <TripDetailScreen
         trip={selectedTrip}
         currentUser={user}
-        onBack={() => navigate('passenger_search')}
+        onBack={() => navigate(detailReturnTo)}
         onTripUpdated={(updatedTrip) => setSelectedTrip(updatedTrip)}
       />
     );
@@ -173,7 +192,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
         onBack={() => navigate('driver_test_route')}
         onGoToVehicleSetup={() => navigate('driver_profile_vehicle')}
         onGoToRouteSetup={() => navigate('driver_route_setup')}
-        onSuccessPublished={goHome}
+        onSuccessPublished={() => navigate('my_trips')}
       />
     );
   }
@@ -194,6 +213,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
         onBack={goHome}
         onSelectTripDetail={(trip) => {
           setSelectedTrip(trip);
+          setDetailReturnTo('my_trips');
           setActiveScreen('trip_detail');
         }}
         onGoToRequests={() => navigate('driver_requests')}
@@ -214,14 +234,6 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
         onLogout={onLogout}
       />
 
-      <NotificationsCenterModal
-        visible={notificationsOpen}
-        onClose={() => {
-          setNotificationsOpen(false);
-          setUnreadCount(getUnreadNotificationCount());
-        }}
-      />
-
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <Header
           subtitle="TecNM Campus Morelia"
@@ -229,7 +241,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
           rightElement={
             <NotificationBell
               unreadCount={unreadCount}
-              onPress={() => setNotificationsOpen(true)}
+              onPress={openCenter}
             />
           }
         />
@@ -282,23 +294,51 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
 
           <View style={styles.quickGrid}>
             <TouchableOpacity
-              style={styles.quickCard}
+              style={[styles.quickCard, badges.search.count > 0 && styles.quickCardNotify]}
               onPress={() => navigate('passenger_search')}
               activeOpacity={0.8}
             >
+              <SectionBadge count={badges.search.count} />
               <MaterialCommunityIcons name="magnify" size={28} color={THEME.colors.primary} />
               <Text style={styles.quickCardTitle}>Buscar Viajes</Text>
-              <Text style={styles.quickCardSub}>Consulta viajes disponibles</Text>
+              {badges.search.count > 0 ? (
+                <Text style={[styles.quickCardSub, styles.quickCardSubNotify]}>
+                  {plural(badges.search.count, 'viaje nuevo', 'viajes nuevos')}
+                </Text>
+              ) : (
+                <Text style={styles.quickCardSub}>Consulta viajes disponibles</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.quickCard}
+              style={[
+                styles.quickCard,
+                badges.myTrips.count > 0 && (badges.myTrips.critical ? styles.quickCardCritical : styles.quickCardNotify),
+              ]}
               onPress={() => navigate('my_trips')}
               activeOpacity={0.8}
             >
-              <MaterialCommunityIcons name="calendar-check" size={28} color={THEME.colors.primary} />
+              <SectionBadge count={badges.myTrips.count} critical={badges.myTrips.critical} />
+              <MaterialCommunityIcons
+                name="calendar-check"
+                size={28}
+                color={badges.myTrips.critical ? THEME.colors.error : THEME.colors.primary}
+              />
               <Text style={styles.quickCardTitle}>Mis Viajes</Text>
-              <Text style={styles.quickCardSub}>Reservaciones y viajes activos</Text>
+              {badges.myTrips.count > 0 ? (
+                <Text
+                  style={[
+                    styles.quickCardSub,
+                    badges.myTrips.critical ? styles.quickCardSubCritical : styles.quickCardSubNotify,
+                  ]}
+                >
+                  {badges.myTrips.critical
+                    ? plural(badges.myTrips.count, 'aviso importante', 'avisos importantes')
+                    : plural(badges.myTrips.count, 'actualización', 'actualizaciones')}
+                </Text>
+              ) : (
+                <Text style={styles.quickCardSub}>Reservaciones y viajes activos</Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -327,13 +367,20 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.quickCard}
+              style={[styles.quickCard, badges.requests.count > 0 && styles.quickCardNotify]}
               onPress={() => navigate('driver_requests')}
               activeOpacity={0.8}
             >
+              <SectionBadge count={badges.requests.count} />
               <MaterialCommunityIcons name="account-multiple-check" size={28} color={THEME.colors.primary} />
               <Text style={styles.quickCardTitle}>Solicitudes</Text>
-              <Text style={styles.quickCardSub}>Gestiona pasajeros</Text>
+              {badges.requests.count > 0 ? (
+                <Text style={[styles.quickCardSub, styles.quickCardSubNotify]}>
+                  {plural(badges.requests.count, 'por responder', 'por responder')}
+                </Text>
+              ) : (
+                <Text style={styles.quickCardSub}>Gestiona pasajeros</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -507,6 +554,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: THEME.colors.border,
     ...THEME.shadows.card,
+  },
+  quickCardNotify: {
+    borderColor: THEME.colors.accent,
+    borderWidth: 1.5,
+    ...THEME.shadows.hover,
+  },
+  quickCardCritical: {
+    borderColor: THEME.colors.error,
+    borderWidth: 1.5,
+    backgroundColor: '#FFF7F7',
+  },
+  quickCardSubNotify: {
+    color: THEME.colors.accentDark,
+    fontWeight: '800',
+  },
+  quickCardSubCritical: {
+    color: THEME.colors.error,
+    fontWeight: '800',
   },
   quickCardAccent: {
     borderColor: THEME.colors.primary,

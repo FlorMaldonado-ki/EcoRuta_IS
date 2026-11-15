@@ -141,31 +141,49 @@ function toUsuarioPublicoDTO(row, { incluirTelefono = false } = {}) {
   };
 }
 
-/** PATCH /api/me (RF-05): solo nombre, carrera/departamento y teléfono. */
+/**
+ * PATCH /api/me (RF-05, RNF-09, SCRUM-45). Lista blanca: fullName, phone y
+ * career (alumno) o department (maestro). Cualquier otro campo (email, userType,
+ * status, role, password…) se IGNORA: nunca llega al UPDATE.
+ */
+const CAMPOS_PERFIL = Object.freeze(['fullName', 'phone', 'career', 'department']);
+
 function parseActualizacionPerfil(body, usuarioActual, ctx) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new ValidationError({}, 'Envía los datos del perfil.');
+  }
   const errors = {};
   const cambios = {};
+  const vacio = (v) => v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+
   if (body.fullName !== undefined) {
     const v = str(body.fullName).replace(/\s+/g, ' ');
-    if (v.length < 4 || v.length > 120) errors.fullName = 'Ingresa tu nombre y apellidos completos.';
+    if (v.length < 4) errors.fullName = 'Ingresa tu nombre y apellidos completos.';
+    else if (v.length > 120) errors.fullName = 'El nombre no puede exceder 120 caracteres.';
     else cambios.nombre_completo = v;
   }
-  if (body.career !== undefined && usuarioActual.tipo === 'estudiante') {
-    if (!ctx.carreras.includes(str(body.career))) errors.career = 'Carrera no válida.';
+
+  if (!vacio(body.career)) {
+    if (usuarioActual.tipo !== 'estudiante') errors.career = 'Solo los alumnos registran carrera.';
+    else if (!ctx.carreras.includes(str(body.career))) errors.career = 'Selecciona una carrera de la lista.';
     else cambios.carrera = str(body.career);
   }
-  if (body.department !== undefined && usuarioActual.tipo === 'docente') {
-    if (!ctx.departamentos.includes(str(body.department))) errors.department = 'Departamento no válido.';
+  if (!vacio(body.department)) {
+    if (usuarioActual.tipo !== 'docente') errors.department = 'Solo los maestros registran departamento.';
+    else if (!ctx.departamentos.includes(str(body.department))) errors.department = 'Selecciona un departamento de la lista.';
     else cambios.departamento = str(body.department);
   }
+
   if (body.phone !== undefined) {
-    if (body.phone === null || body.phone === '') cambios.telefono = null;
+    if (vacio(body.phone)) cambios.telefono = null; // el teléfono es opcional (RF-05)
     else {
-      const digitos = String(body.phone).replace(/\D/g, '').replace(/^52(?=\d{10}$)/, '');
+      const crudo = String(body.phone);
+      const digitos = crudo.replace(/[\s\-().]/g, '').replace(/^\+?52(?=\d{10}$)/, '');
       if (!/^\d{10}$/.test(digitos)) errors.phone = 'El teléfono debe tener 10 dígitos.';
       else cambios.telefono = digitos;
     }
   }
+
   if (Object.keys(errors).length) throw new ValidationError(errors);
   return cambios;
 }
@@ -176,6 +194,7 @@ module.exports = {
   ValidationError,
   parseRegistro,
   parseActualizacionPerfil,
+  CAMPOS_PERFIL,
   toUsuarioDTO,
   toUsuarioPublicoDTO,
 };

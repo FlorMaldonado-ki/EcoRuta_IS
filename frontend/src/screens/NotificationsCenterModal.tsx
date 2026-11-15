@@ -1,157 +1,186 @@
-import React, { useEffect, useState } from 'react';
-import {
-  Modal,
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  FlatList,
-  SafeAreaView,
-} from 'react-native';
+/**
+ * Bandeja de avisos (últimas 72 h). Se abre desde la campana, el menú o una alerta.
+ * Encabezado guinda con línea dorada, filtros, grupos "Nuevas / Anteriores" y tarjetas
+ * con icono por tipo. Tocar un aviso lo marca como leído y lleva a su sección.
+ */
+import React, { useMemo, useState } from 'react';
+import { Modal, View, Text, StyleSheet, TouchableOpacity, SectionList, SafeAreaView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../constants/theme';
-import {
-  getNotifications,
-  markNotificationAsRead,
-  markAllNotificationsAsRead,
-} from '../services/tripStorage';
-import type { NotificationItem, NotificationType } from '../types/api';
+import { NOTIFICATION_META, SECTION_LABEL, relativeTime } from '../constants/notificationMeta';
+import { useNotifications } from '../hooks/useNotifications';
+import type { NotificationItem } from '../types/api';
 
-interface NotificationsCenterModalProps {
-  visible: boolean;
-  onClose: () => void;
-  onSelectNotification?: (item: NotificationItem) => void;
-}
+type Filter = 'all' | 'unread' | 'critical';
 
-export const NotificationsCenterModal: React.FC<NotificationsCenterModalProps> = ({
-  visible,
-  onClose,
-  onSelectNotification,
-}) => {
-  const [items, setItems] = useState<NotificationItem[]>([]);
+const FILTERS: { key: Filter; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
+  { key: 'all', label: 'Todas', icon: 'bell-outline' },
+  { key: 'unread', label: 'Sin leer', icon: 'email-mark-as-unread' },
+  { key: 'critical', label: 'Importantes', icon: 'alert-octagon-outline' },
+];
 
-  const refreshList = () => {
-    setItems(getNotifications());
+export const NotificationsCenterModal: React.FC = () => {
+  const { items, unread, centerOpen: visible, closeCenter, markRead, markAllRead, refresh, goToSection } =
+    useNotifications();
+  const [filter, setFilter] = useState<Filter>('all');
+  const [now, setNow] = useState(() => Date.now());
+
+  // Al abrir: trae lo más reciente y fija la hora de referencia para "Hace X min".
+  const handleShow = () => {
+    refresh();
+    setNow(Date.now());
   };
 
-  useEffect(() => {
-    if (visible) {
-      refreshList();
-    }
-  }, [visible]);
+  const sections = useMemo(() => {
+    const filtered = items.filter((n) =>
+      filter === 'unread' ? !n.read : filter === 'critical' ? n.critical : true
+    );
+    const fresh = filtered.filter((n) => !n.read);
+    const old = filtered.filter((n) => n.read);
+    return [
+      ...(fresh.length ? [{ title: 'Nuevas', data: fresh }] : []),
+      ...(old.length ? [{ title: 'Anteriores', data: old }] : []),
+    ];
+  }, [items, filter]);
+
+  const criticalCount = items.filter((n) => n.critical && !n.read).length;
 
   const handleItemPress = (item: NotificationItem) => {
-    markNotificationAsRead(item.id);
-    refreshList();
-    onSelectNotification?.(item);
+    if (!item.read) markRead(item.id);
+    goToSection(NOTIFICATION_META[item.type].section);
   };
 
-  const handleMarkAll = () => {
-    markAllNotificationsAsRead();
-    refreshList();
-  };
+  const renderItem = ({ item }: { item: NotificationItem }) => {
+    const meta = NOTIFICATION_META[item.type];
+    return (
+      <TouchableOpacity
+        style={[styles.item, !item.read && styles.itemUnread, item.critical && !item.read && styles.itemCritical]}
+        onPress={() => handleItemPress(item)}
+        activeOpacity={0.85}
+      >
+        {item.critical && <View style={styles.itemCriticalBar} />}
 
-  const getIconForType = (type: NotificationType): { name: keyof typeof MaterialCommunityIcons.glyphMap; color: string } => {
-    switch (type) {
-      case 'solicitud_aceptada':
-        return { name: 'check-circle-outline', color: THEME.colors.success };
-      case 'solicitud_rechazada':
-        return { name: 'close-circle-outline', color: THEME.colors.error };
-      case 'solicitud_recibida':
-        return { name: 'account-plus-outline', color: THEME.colors.primary };
-      case 'viaje_cancelado':
-      case 'lugar_cancelado':
-      case 'solicitud_cancelada':
-        return { name: 'alert-circle-outline', color: THEME.colors.warning };
-      case 'viaje_proximo':
-        return { name: 'clock-fast', color: THEME.colors.accentDark };
-      default:
-        return { name: 'bell-outline', color: THEME.colors.primary };
-    }
-  };
+        <View style={[styles.itemIcon, { backgroundColor: item.read ? THEME.colors.surfaceAlt : meta.tint }]}>
+          <MaterialCommunityIcons name={meta.icon} size={22} color={item.read ? THEME.colors.textMuted : meta.color} />
+        </View>
 
-  const formatRelativeTime = (isoString: string) => {
-    const diffMs = Date.now() - new Date(isoString).getTime();
-    const diffMins = Math.floor(diffMs / 60_000);
-    const diffHours = Math.floor(diffMins / 60);
+        <View style={styles.itemBody}>
+          <View style={styles.itemTop}>
+            {item.critical ? (
+              <View style={styles.importantChip}>
+                <MaterialCommunityIcons name="alert-octagon" size={10} color="#FFFFFF" />
+                <Text style={styles.importantChipText}>IMPORTANTE</Text>
+              </View>
+            ) : (
+              <Text style={[styles.itemLabel, { color: meta.color }]}>{meta.label}</Text>
+            )}
+            <View style={styles.itemTimeRow}>
+              <Text style={styles.itemTime}>{relativeTime(item.createdAt, now)}</Text>
+              {!item.read && <View style={styles.unreadDot} />}
+            </View>
+          </View>
 
-    if (diffMins < 1) return 'Hace un momento';
-    if (diffMins < 60) return `Hace ${diffMins} min`;
-    if (diffHours < 24) return `Hace ${diffHours} h`;
-    const days = Math.floor(diffHours / 24);
-    return `Hace ${days} día${days > 1 ? 's' : ''}`;
+          <Text
+            style={[styles.itemTitle, !item.read && styles.itemTitleUnread, item.critical && !item.read && { color: THEME.colors.error }]}
+            numberOfLines={2}
+          >
+            {item.title}
+          </Text>
+          <Text style={styles.itemMessage} numberOfLines={3}>
+            {item.message}
+          </Text>
+
+          <View style={styles.itemFooter}>
+            <View style={styles.sectionChip}>
+              <Text style={styles.sectionChipText}>{SECTION_LABEL[meta.section]}</Text>
+              <MaterialCommunityIcons name="chevron-right" size={14} color={THEME.colors.primary} />
+            </View>
+          </View>
+        </View>
+
+      </TouchableOpacity>
+    );
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={closeCenter} onShow={handleShow}>
       <View style={styles.overlay}>
-        <SafeAreaView style={styles.cardContainer}>
-          {/* Header */}
+        <TouchableOpacity style={styles.overlayTap} onPress={closeCenter} activeOpacity={1} />
+        <SafeAreaView style={styles.sheet}>
+          {/* Encabezado guinda */}
           <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <MaterialCommunityIcons name="bell-ring" size={22} color={THEME.colors.primary} />
-              <View>
-                <Text style={styles.title}>Notificaciones</Text>
-                <Text style={styles.retentionNotice}>Conservación activa: últimas 72 horas</Text>
+            <View style={styles.grabber} />
+            <View style={styles.headerRow}>
+              <View style={styles.headerIcon}>
+                <MaterialCommunityIcons name="bell-ring" size={22} color={THEME.colors.accent} />
               </View>
-            </View>
-
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <MaterialCommunityIcons name="close" size={22} color={THEME.colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Barra de acciones si hay elementos */}
-          {items.length > 0 && (
-            <View style={styles.actionBar}>
-              <Text style={styles.itemsCountText}>{items.length} aviso(s)</Text>
-              <TouchableOpacity onPress={handleMarkAll} style={styles.markAllBtn}>
-                <MaterialCommunityIcons name="check-all" size={16} color={THEME.colors.primary} />
-                <Text style={styles.markAllText}>Marcar todo como leído</Text>
+              <View style={styles.headerTexts}>
+                <Text style={styles.headerTitle}>Notificaciones</Text>
+                <Text style={styles.headerSub}>
+                  {unread > 0 ? `${unread} sin leer` : 'Todo al día'} · últimas 72 horas
+                </Text>
+              </View>
+              <TouchableOpacity onPress={closeCenter} style={styles.headerClose} accessibilityLabel="Cerrar">
+                <MaterialCommunityIcons name="close" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
-          )}
 
-          {/* Lista de Notificaciones */}
-          <FlatList
-            data={items}
+            {criticalCount > 0 && (
+              <View style={styles.criticalBanner}>
+                <MaterialCommunityIcons name="alert-octagon" size={16} color="#FFFFFF" />
+                <Text style={styles.criticalBannerText}>
+                  {criticalCount === 1 ? 'Tienes 1 aviso importante sin leer' : `Tienes ${criticalCount} avisos importantes sin leer`}
+                </Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.goldLine} />
+
+          {/* Filtros */}
+          <View style={styles.filters}>
+            {FILTERS.map((f) => {
+              const active = filter === f.key;
+              return (
+                <TouchableOpacity
+                  key={f.key}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                  onPress={() => setFilter(f.key)}
+                  activeOpacity={0.8}
+                >
+                  <MaterialCommunityIcons name={f.icon} size={14} color={active ? '#FFFFFF' : THEME.colors.primary} />
+                  <Text style={[styles.filterText, active && styles.filterTextActive]}>{f.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            {unread > 0 && (
+              <TouchableOpacity onPress={markAllRead} style={styles.markAll} hitSlop={8}>
+                <MaterialCommunityIcons name="check-all" size={16} color={THEME.colors.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <SectionList
+            sections={sections}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
+            renderItem={renderItem}
+            renderSectionHeader={({ section }) => (
+              <Text style={styles.groupTitle}>{section.title}</Text>
+            )}
+            stickySectionHeadersEnabled={false}
+            contentContainerStyle={styles.list}
             ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <MaterialCommunityIcons name="bell-sleep-outline" size={54} color={THEME.colors.textMuted} />
-                <Text style={styles.emptyTitle}>Bandeja al día</Text>
-                <Text style={styles.emptySubtitle}>
-                  No tienes notificaciones en las últimas 72 horas. Los avisos de solicitudes y viajes aparecerán aquí mientras uses la app.
+              <View style={styles.empty}>
+                <View style={styles.emptyIcon}>
+                  <MaterialCommunityIcons name="bell-check-outline" size={40} color={THEME.colors.primary} />
+                </View>
+                <Text style={styles.emptyTitle}>
+                  {filter === 'all' ? 'Bandeja al día' : filter === 'unread' ? 'No tienes avisos sin leer' : 'Sin avisos importantes'}
+                </Text>
+                <Text style={styles.emptySub}>
+                  Aquí verás las solicitudes, respuestas y cancelaciones de tus viajes.
                 </Text>
               </View>
             }
-            renderItem={({ item }) => {
-              const iconData = getIconForType(item.type);
-              return (
-                <TouchableOpacity
-                  style={[styles.itemCard, !item.read && styles.itemCardUnread]}
-                  onPress={() => handleItemPress(item)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.iconWrapper, { backgroundColor: iconData.color + '18' }]}>
-                    <MaterialCommunityIcons name={iconData.name} size={22} color={iconData.color} />
-                  </View>
-
-                  <View style={styles.itemTextContent}>
-                    <View style={styles.itemTopRow}>
-                      <Text style={[styles.itemTitle, !item.read && styles.itemTitleUnread]}>
-                        {item.title}
-                      </Text>
-                      <Text style={styles.itemTime}>{formatRelativeTime(item.createdAt)}</Text>
-                    </View>
-                    <Text style={styles.itemMessage}>{item.message}</Text>
-                  </View>
-
-                  {!item.read && <View style={styles.unreadDot} />}
-                </TouchableOpacity>
-              );
-            }}
           />
         </SafeAreaView>
       </View>
@@ -162,104 +191,213 @@ export const NotificationsCenterModal: React.FC<NotificationsCenterModalProps> =
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    backgroundColor: 'rgba(79, 15, 39, 0.45)',
     justifyContent: 'flex-end',
   },
-  cardContainer: {
-    backgroundColor: THEME.colors.surface,
-    borderTopLeftRadius: THEME.borderRadius.xl,
-    borderTopRightRadius: THEME.borderRadius.xl,
-    maxHeight: '85%',
-    minHeight: '50%',
+  overlayTap: {
+    flex: 1,
+  },
+  sheet: {
+    backgroundColor: THEME.colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '88%',
+    minHeight: '55%',
     overflow: 'hidden',
-    ...THEME.shadows.card,
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 18,
+    backgroundColor: THEME.colors.primary,
+    paddingHorizontal: 18,
     paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.border,
   },
-  headerLeft: {
+  grabber: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
-  title: {
-    fontSize: 17,
+  headerIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,155,39,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTexts: {
+    flex: 1,
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
     fontWeight: '800',
-    color: THEME.colors.textPrimary,
   },
-  retentionNotice: {
-    fontSize: 11,
-    color: THEME.colors.textMuted,
+  headerSub: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    marginTop: 1,
   },
-  closeBtn: {
-    padding: 6,
-  },
-  actionBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  headerClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    justifyContent: 'center',
+  },
+  criticalBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    backgroundColor: THEME.colors.error,
+    borderRadius: THEME.borderRadius.md,
     paddingVertical: 8,
-    backgroundColor: THEME.colors.surfaceAlt,
-    borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.border,
+    paddingHorizontal: 12,
   },
-  itemsCountText: {
+  criticalBannerText: {
+    color: '#FFFFFF',
     fontSize: 12,
-    color: THEME.colors.textSecondary,
-    fontWeight: '600',
+    fontWeight: '700',
+    flex: 1,
   },
-  markAllBtn: {
+  goldLine: {
+    height: 3,
+    backgroundColor: THEME.colors.accent,
+  },
+  filters: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  markAllText: {
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: THEME.borderRadius.pill,
+    backgroundColor: THEME.colors.surface,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: THEME.colors.primary,
+    borderColor: THEME.colors.primary,
+  },
+  filterText: {
     fontSize: 12,
-    color: THEME.colors.primary,
     fontWeight: '700',
+    color: THEME.colors.primary,
   },
-  listContent: {
-    padding: 16,
+  filterTextActive: {
+    color: '#FFFFFF',
+  },
+  markAll: {
+    marginLeft: 'auto',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: THEME.colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  list: {
+    paddingHorizontal: 16,
+    paddingBottom: 28,
     flexGrow: 1,
   },
-  itemCard: {
+  groupTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: THEME.colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  item: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 14,
-    borderRadius: THEME.borderRadius.md,
+    gap: 12,
     backgroundColor: THEME.colors.surface,
+    borderRadius: 16,
+    padding: 14,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: THEME.colors.border,
-    gap: 12,
+    overflow: 'hidden',
+    ...THEME.shadows.card,
   },
-  itemCardUnread: {
-    backgroundColor: THEME.colors.primarySoft,
+  itemUnread: {
     borderColor: 'rgba(107, 23, 54, 0.25)',
   },
-  iconWrapper: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    justifyContent: 'center',
-    alignItems: 'center',
+  itemCritical: {
+    backgroundColor: '#FFF7F7',
+    borderColor: THEME.colors.errorBorder,
   },
-  itemTextContent: {
+  itemCriticalBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: THEME.colors.error,
+  },
+  itemIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemBody: {
     flex: 1,
   },
-  itemTopRow: {
+  itemTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 3,
+  },
+  itemLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  importantChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: THEME.colors.error,
+    borderRadius: THEME.borderRadius.pill,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  importantChipText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  itemTime: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
   },
   itemTitle: {
     fontSize: 14,
@@ -268,37 +406,64 @@ const styles = StyleSheet.create({
   },
   itemTitleUnread: {
     fontWeight: '800',
-    color: THEME.colors.primary,
-  },
-  itemTime: {
-    fontSize: 11,
-    color: THEME.colors.textMuted,
   },
   itemMessage: {
-    fontSize: 13,
+    fontSize: 12,
+    lineHeight: 17,
     color: THEME.colors.textSecondary,
-    lineHeight: 18,
+    marginTop: 3,
+  },
+  itemFooter: {
+    flexDirection: 'row',
+    marginTop: 8,
+  },
+  sectionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME.colors.primarySoft,
+    borderRadius: THEME.borderRadius.pill,
+    paddingLeft: 9,
+    paddingRight: 4,
+    paddingVertical: 2,
+  },
+  sectionChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.colors.primary,
+  },
+  itemTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: THEME.colors.primary,
-    marginTop: 6,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: THEME.colors.accent,
   },
-  emptyContainer: {
+  empty: {
+    alignItems: 'center',
+    paddingTop: 40,
+    paddingHorizontal: 30,
+  },
+  emptyIcon: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: THEME.colors.primarySoft,
+    borderWidth: 1.5,
+    borderColor: THEME.colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 50,
-    paddingHorizontal: 30,
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     color: THEME.colors.textPrimary,
-    marginTop: 12,
+    marginTop: 14,
   },
-  emptySubtitle: {
+  emptySub: {
     fontSize: 13,
     color: THEME.colors.textSecondary,
     textAlign: 'center',
@@ -306,4 +471,3 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 });
-

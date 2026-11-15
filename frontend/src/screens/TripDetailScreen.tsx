@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,14 +7,27 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
-  Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Header } from '../components/Header';
 import { InteractiveMap } from '../components/InteractiveMap';
+import { InputField } from '../components/InputField';
 import { THEME } from '../constants/theme';
-import { requestSeat, cancelReservation } from '../services/tripStorage';
-import type { TripDTO, UserDTO } from '../types/api';
+import { requestSeat, cancelReservation, getTripById, errorMessage as apiErrorMessage } from '../services/tripService';
+import { confirmAction } from '../utils/notify';
+import { useNotifications } from '../hooks/useNotifications';
+import { formatDistanceKm, formatDurationMin, estimateSourceLabel } from '../utils/tripEstimate';
+import type { JoinPoint, TripDTO, UserDTO } from '../types/api';
+import type { ApiJoinPointRequest } from '../types/apiBackend';
+
+/** Lo que el pasajero está eligiendo antes de solicitar. */
+type JoinChoice =
+  | { kind: 'driver'; pointId: string }
+  | { kind: 'proposed'; lat: number | null; lng: number | null };
+
+/** Texto para mostrar dónde se une el pasajero. */
+const joinPointLabel = (jp: JoinPoint) =>
+  jp.type === 'driver' ? `${jp.name} (punto del conductor)` : `${jp.name} (punto que propusiste)`;
 
 interface TripDetailScreenProps {
   trip: TripDTO;
@@ -30,8 +43,12 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
   onTripUpdated,
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { showAlert } = useNotifications();
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [joinChoice, setJoinChoice] = useState<JoinChoice | null>(null);
+  const [proposedName, setProposedName] = useState('');
+  const [proposedNote, setProposedNote] = useState('');
 
   // Formato de fechas y horas
   const depDate = new Date(trip.departureAt);
@@ -57,75 +74,131 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
     });
   }
 
-  const isDriver = trip.driver.id === currentUser.id;
+  // Refresca el viaje desde la API (estado de mi reserva, placas visibles, asientos).
+  const refreshTrip = async () => {
+    try {
+      onTripUpdated(await getTripById(trip.id, currentUser));
+    } catch (err) {
+      setErrorMessage(apiErrorMessage(err));
+    }
+  };
+
+  useEffect(() => {
+    refreshTrip();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip.id]);
+
+  const isDriver = trip.isMine ?? trip.driver.id === currentUser.id;
   const isAccepted = trip.userReservationStatus === 'aceptada';
   const isPending = trip.userReservationStatus === 'solicitada';
   const isFull = trip.seatsAvailable <= 0;
   const isExpired = new Date(trip.departureAt).getTime() <= Date.now();
+  const isUnavailable = trip.status !== 'published';
 
   // Privacidad de placas (RNF-12): solo visible para el conductor o con reserva aceptada
   const canViewPlates = isDriver || isAccepted;
 
-  const handleRequestTrip = () => {
+  // Lista de espera: solicitud pendiente en un viaje que ya se llenó.
+  const isWaitlisted = isPending && isFull && !isUnavailable;
+  // ¿Puede elegir dónde unirse? (todavía no tiene solicitud y el viaje está disponible)
+  const canChooseJoin = !isDriver && !isAccepted && !isPending && !isUnavailable && !isExpired && !isFull;
+  const hasDriverPoints = trip.meetingPoints.length > 0;
+  const pickingOnMap = canChooseJoin && joinChoice?.kind === 'proposed';
+  const proposedReady = joinChoice?.kind === 'proposed' && joinChoice.lat !== null && joinChoice.lng !== null;
+  const joinReady =
+    joinChoice?.kind === 'driver' || proposedReady || (!hasDriverPoints && joinChoice === null);
+
+  // Lo que se resalta en el mapa: la elección actual o el punto de la reserva existente.
+  const mySavedJoin = trip.userJoinPoint ?? null;
+  const mapSelectedPointId = canChooseJoin
+    ? joinChoice?.kind === 'driver' ? joinChoice.pointId : null
+    : mySavedJoin?.type === 'driver' ? mySavedJoin.pointId : null;
+  const mapJoinPoint = canChooseJoin
+    ? proposedReady && joinChoice?.kind === 'proposed'
+      ? { lat: joinChoice.lat!, lng: joinChoice.lng!, name: proposedName.trim() || 'Tu punto propuesto' }
+      : null
+    : mySavedJoin?.type === 'proposed' ? { lat: mySavedJoin.lat, lng: mySavedJoin.lng, name: mySavedJoin.name } : null;
+
+  const selectDriverPoint = (pointId: string) => {
+    if (!canChooseJoin) return;
+    setJoinChoice({ kind: 'driver', pointId });
+  };
+
+  const buildJoinRequest = (): ApiJoinPointRequest | undefined => {
+    if (joinChoice?.kind === 'driver') return { pointId: joinChoice.pointId };
+    if (joinChoice?.kind === 'proposed' && joinChoice.lat !== null && joinChoice.lng !== null) {
+      return {
+        lat: joinChoice.lat,
+        lng: joinChoice.lng,
+        ...(proposedName.trim() && { name: proposedName.trim() }),
+        ...(proposedNote.trim() && { note: proposedNote.trim() }),
+      };
+    }
+    return undefined;
+  };
+
+  const chosenLabel = (): string | null => {
+    if (joinChoice?.kind === 'driver') return trip.meetingPoints.find((p) => p.id === joinChoice.pointId)?.name ?? null;
+    if (proposedReady) return proposedName.trim() || 'Punto que marcaste en el mapa';
+    return null;
+  };
+
+  const handleRequestTrip = async () => {
     setIsSubmitting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
-
-    setTimeout(() => {
-      const result = requestSeat(trip.id, {
-        id: currentUser.id,
-        fullName: currentUser.fullName,
-        email: currentUser.email,
-        photoUrl: currentUser.photoUrl,
+    try {
+      const where = chosenLabel();
+      await requestSeat(trip.id, buildJoinRequest());
+      setSuccessMessage(
+        '¡Solicitud enviada con éxito! Permanecerá pendiente hasta que el conductor la acepte o rechace.'
+      );
+      showAlert({
+        tone: 'success',
+        title: 'Solicitud enviada',
+        message: `Avisamos a ${trip.driver.fullName}${where ? ` que te unirás en: ${where}` : ''}. Te notificaremos en cuanto responda.`,
       });
-
+      setJoinChoice(null);
+      setProposedName('');
+      setProposedNote('');
+      await refreshTrip();
+    } catch (err) {
+      setErrorMessage(apiErrorMessage(err));
+      showAlert({ tone: 'warning', title: 'No se pudo enviar la solicitud', message: apiErrorMessage(err) });
+    } finally {
       setIsSubmitting(false);
+    }
+  };
 
-      if (result.ok && result.reservation) {
-        setSuccessMessage(result.message);
-        onTripUpdated({
-          ...trip,
-          userReservationStatus: 'solicitada',
-          userReservationId: result.reservation.id,
-        });
-      } else {
-        setErrorMessage(result.message);
-      }
-    }, 400);
+  const doCancelRequest = async () => {
+    if (!trip.userReservationId) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const result = await cancelReservation(trip.userReservationId);
+      setSuccessMessage(result.message);
+      showAlert({
+        tone: 'critical',
+        title: result.lateCancellation ? 'Cancelación tardía registrada' : isAccepted ? 'Cancelaste tu lugar' : 'Cancelaste tu solicitud',
+        message: `${result.message} El conductor ${trip.driver.fullName} ya fue notificado.`,
+      });
+      await refreshTrip();
+    } catch (err) {
+      setErrorMessage(apiErrorMessage(err));
+      showAlert({ tone: 'warning', title: 'No se pudo cancelar', message: apiErrorMessage(err) });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCancelRequest = () => {
     if (!trip.userReservationId) return;
-
-    Alert.alert(
+    confirmAction(
       'Cancelar solicitud',
-      '¿Estás seguro de que deseas cancelar tu solicitud de lugar para este viaje?',
-      [
-        { text: 'No, mantener', style: 'cancel' },
-        {
-          text: 'Sí, cancelar',
-          style: 'destructive',
-          onPress: () => {
-            setIsSubmitting(true);
-            const result = cancelReservation(trip.userReservationId!, currentUser.id);
-            setIsSubmitting(false);
-
-            if (result.ok) {
-              setSuccessMessage(result.message);
-              onTripUpdated({
-                ...trip,
-                userReservationStatus: 'none',
-                userReservationId: null,
-                seatsAvailable: isAccepted
-                  ? Math.min(trip.seatsTotal, trip.seatsAvailable + 1)
-                  : trip.seatsAvailable,
-              });
-            } else {
-              setErrorMessage(result.message);
-            }
-          },
-        },
-      ]
+      '¿Estás seguro de que deseas cancelar tu lugar o solicitud para este viaje?',
+      'Sí, cancelar',
+      doCancelRequest
     );
   };
 
@@ -137,7 +210,7 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
       <View style={styles.navBar}>
         <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={THEME.colors.primary} />
-          <Text style={styles.backButtonText}>Volver a la búsqueda</Text>
+          <Text style={styles.backButtonText}>Volver</Text>
         </TouchableOpacity>
       </View>
 
@@ -196,6 +269,9 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
               {trip.vehicle.brand} {trip.vehicle.model}
             </Text>
             <Text style={styles.vehicleColor}>Color: {trip.vehicle.color}</Text>
+            {canViewPlates && trip.driver.phone ? (
+              <Text style={styles.vehicleColor}>Teléfono del conductor: {trip.driver.phone}</Text>
+            ) : null}
             <View style={styles.platesRow}>
               <Text style={styles.platesLabel}>Placas: </Text>
               {canViewPlates ? (
@@ -232,11 +308,35 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
               <View>
                 <Text style={styles.itineraryLabel}>Llegada Estimada</Text>
                 <Text style={styles.itineraryValue}>{arrivalFormatted}</Text>
-                <Text style={styles.itinerarySubtext}>Aprox. {trip.durationMin} min</Text>
+                <Text style={styles.itinerarySubtext}>Aprox. {formatDurationMin(trip.durationMin)}</Text>
               </View>
             </View>
           )}
         </View>
+
+        {/* Distancia y duración estimadas (RF-10) */}
+        <View style={styles.estimateBox}>
+          <View style={styles.estimateItem}>
+            <MaterialCommunityIcons name="map-marker-distance" size={18} color={THEME.colors.primary} />
+            <View>
+              <Text style={styles.itineraryLabel}>Distancia</Text>
+              <Text style={styles.estimateValue}>{formatDistanceKm(trip.distanceKm)}</Text>
+            </View>
+          </View>
+          <View style={styles.estimateItem}>
+            <MaterialCommunityIcons name="timer-outline" size={18} color={THEME.colors.primary} />
+            <View>
+              <Text style={styles.itineraryLabel}>Duración</Text>
+              <Text style={styles.estimateValue}>{formatDurationMin(trip.durationMin) ?? '—'}</Text>
+            </View>
+          </View>
+        </View>
+        <Text style={styles.estimateSource}>
+          {estimateSourceLabel(trip)}
+          {trip.distanceSource === 'haversine'
+            ? ': el servicio de rutas no respondió; se calculó en línea recta × 1.3 a 25 km/h.'
+            : ''}
+        </Text>
 
         {/* Origen y Destino */}
         <View style={styles.placesContainer}>
@@ -277,37 +377,142 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
           <Text style={styles.sectionTitle}>Recorrido y Puntos de Encuentro</Text>
         </View>
         <Text style={styles.mapSubtitle}>
-          Trazado interactivo mediante OpenStreetMap y OSRM. Puedes ampliar o mover el mapa.
+          {canChooseJoin
+            ? pickingOnMap
+              ? 'Toca el mapa en el lugar de la ruta donde quieres que el conductor te recoja.'
+              : 'Toca un punto numerado en el mapa o en la lista para elegir dónde te unirás.'
+            : 'Los números son los puntos de encuentro del conductor. Puedes ampliar o mover el mapa.'}
         </Text>
 
         <InteractiveMap
           origin={trip.origin}
           destination={trip.destination}
           meetingPoints={trip.meetingPoints}
-          mode="view"
+          mode={pickingOnMap ? 'edit_meeting_points' : 'view'}
+          onMapClick={pickingOnMap ? ({ lat, lng }) => setJoinChoice({ kind: 'proposed', lat, lng }) : undefined}
+          onPointPress={canChooseJoin && !pickingOnMap ? selectDriverPoint : undefined}
+          selectedPointId={mapSelectedPointId}
+          joinPoint={mapJoinPoint}
           height={320}
         />
 
-        {/* Lista detallada de Puntos de Encuentro */}
-        {trip.meetingPoints && trip.meetingPoints.length > 0 ? (
+        {/* Dónde me uno (reserva existente) */}
+        {mySavedJoin && (isPending || isAccepted) && (
+          <View style={styles.joinSavedBox}>
+            <MaterialCommunityIcons name="map-marker-account" size={22} color={THEME.colors.primary} />
+            <View style={styles.flex1}>
+              <Text style={styles.joinSavedLabel}>Te unirás en</Text>
+              <Text style={styles.joinSavedValue}>{joinPointLabel(mySavedJoin)}</Text>
+              {mySavedJoin.note ? <Text style={styles.joinSavedNote}>Nota: {mySavedJoin.note}</Text> : null}
+            </View>
+          </View>
+        )}
+
+        {/* Puntos de encuentro del conductor (elegibles si aún no solicitas) */}
+        {hasDriverPoints && (
           <View style={styles.meetingPointsList}>
-            <Text style={styles.meetingPointsTitle}>Paradas y Puntos de Encuentro acordados:</Text>
-            {trip.meetingPoints.map((mp, index) => (
-              <View key={mp.id || index} style={styles.meetingPointItem}>
-                <View style={styles.mpBadge}>
-                  <Text style={styles.mpBadgeText}>{mp.order || index + 1}</Text>
-                </View>
-                <View style={styles.mpContent}>
-                  <Text style={styles.mpName}>{mp.name}</Text>
-                  {mp.description ? <Text style={styles.mpDesc}>{mp.description}</Text> : null}
-                  <Text style={styles.mpCoords}>
-                    Coord: {mp.lat.toFixed(5)}, {mp.lng.toFixed(5)}
+            <Text style={styles.meetingPointsTitle}>
+              {canChooseJoin ? '¿Dónde te unirás al viaje?' : 'Puntos de encuentro del conductor:'}
+            </Text>
+            {trip.meetingPoints.map((mp, index) => {
+              const selected = canChooseJoin
+                ? joinChoice?.kind === 'driver' && joinChoice.pointId === mp.id
+                : mySavedJoin?.type === 'driver' && mySavedJoin.pointId === mp.id;
+              const Row = canChooseJoin ? TouchableOpacity : View;
+              return (
+                <Row
+                  key={mp.id || index}
+                  style={[styles.choiceItem, selected && styles.choiceItemActive]}
+                  {...(canChooseJoin && { onPress: () => selectDriverPoint(mp.id), activeOpacity: 0.85 })}
+                >
+                  <View style={[styles.mpBadge, selected && styles.mpBadgeActive]}>
+                    <Text style={[styles.mpBadgeText, selected && styles.mpBadgeTextActive]}>{mp.order || index + 1}</Text>
+                  </View>
+                  <View style={styles.mpContent}>
+                    <Text style={styles.mpName}>{mp.name}</Text>
+                    {mp.description ? <Text style={styles.mpDesc}>{mp.description}</Text> : null}
+                  </View>
+                  {canChooseJoin && (
+                    <MaterialCommunityIcons
+                      name={selected ? 'radiobox-marked' : 'radiobox-blank'}
+                      size={22}
+                      color={selected ? THEME.colors.primary : THEME.colors.borderSubtle}
+                    />
+                  )}
+                  {!canChooseJoin && selected && (
+                    <View style={styles.yourPointChip}>
+                      <Text style={styles.yourPointChipText}>Tu punto</Text>
+                    </View>
+                  )}
+                </Row>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Otro punto de la ruta propuesto por el pasajero */}
+        {canChooseJoin && (
+          <View style={styles.meetingPointsList}>
+            {!hasDriverPoints && (
+              <Text style={styles.meetingPointsTitle}>¿Dónde te unirás al viaje? (opcional)</Text>
+            )}
+            <TouchableOpacity
+              style={[styles.choiceItem, joinChoice?.kind === 'proposed' && styles.choiceItemActive]}
+              onPress={() =>
+                setJoinChoice(joinChoice?.kind === 'proposed' ? joinChoice : { kind: 'proposed', lat: null, lng: null })
+              }
+              activeOpacity={0.85}
+            >
+              <View style={[styles.mpBadge, styles.mpBadgeStar, joinChoice?.kind === 'proposed' && styles.mpBadgeActive]}>
+                <Text style={[styles.mpBadgeText, joinChoice?.kind === 'proposed' && styles.mpBadgeTextActive]}>★</Text>
+              </View>
+              <View style={styles.mpContent}>
+                <Text style={styles.mpName}>Otro punto de la ruta</Text>
+                <Text style={styles.mpDesc}>Márcalo en el mapa; el conductor lo verá antes de aceptarte.</Text>
+              </View>
+              <MaterialCommunityIcons
+                name={joinChoice?.kind === 'proposed' ? 'radiobox-marked' : 'radiobox-blank'}
+                size={22}
+                color={joinChoice?.kind === 'proposed' ? THEME.colors.primary : THEME.colors.borderSubtle}
+              />
+            </TouchableOpacity>
+
+            {joinChoice?.kind === 'proposed' && (
+              <View style={styles.proposedBox}>
+                <View style={[styles.pickHint, proposedReady && styles.pickHintDone]}>
+                  <MaterialCommunityIcons
+                    name={proposedReady ? 'check-circle' : 'gesture-tap'}
+                    size={18}
+                    color={proposedReady ? THEME.colors.success : THEME.colors.primary}
+                  />
+                  <Text style={[styles.pickHintText, proposedReady && { color: THEME.colors.success }]}>
+                    {proposedReady
+                      ? 'Punto marcado (★ en el mapa). Toca otro lugar si quieres cambiarlo.'
+                      : 'Toca el mapa de arriba en el lugar donde te unirás.'}
                   </Text>
                 </View>
+                <InputField
+                  label="Nombre del lugar"
+                  value={proposedName}
+                  onChangeText={setProposedName}
+                  placeholder="Ej. Esquina Av. Camelinas y Ventura Puente"
+                  iconName="map-marker"
+                  required={false}
+                  maxLength={80}
+                />
+                <InputField
+                  label="Nota para el conductor"
+                  value={proposedNote}
+                  onChangeText={setProposedNote}
+                  placeholder="Ej. Frente al OXXO, llevo mochila azul"
+                  iconName="message-text-outline"
+                  required={false}
+                  maxLength={160}
+                />
               </View>
-            ))}
+            )}
           </View>
-        ) : null}
+        )}
 
         {/* Notas del conductor */}
         {trip.notes && (
@@ -327,7 +532,7 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
           <View style={styles.noticeBox}>
             <MaterialCommunityIcons name="account-star" size={22} color={THEME.colors.primary} />
             <Text style={styles.noticeText}>
-              Este es tu viaje publicado. Puedes administrar las solicitudes desde "Mis Viajes".
+              Este es tu viaje publicado. Puedes administrar las solicitudes desde Mis Viajes.
             </Text>
           </View>
         ) : isAccepted ? (
@@ -360,15 +565,28 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
           </View>
         ) : isPending ? (
           <View>
-            <View style={styles.pendingNotice}>
-              <MaterialCommunityIcons name="clock-outline" size={24} color={THEME.colors.accentDark} />
-              <View style={styles.pendingTextBox}>
-                <Text style={styles.pendingTitle}>Solicitud pendiente de respuesta</Text>
-                <Text style={styles.pendingSubtitle}>
-                  El conductor revisará tu solicitud y se te notificará cuando la acepte o rechace.
-                </Text>
+            {isWaitlisted ? (
+              <View style={styles.waitlistNotice}>
+                <MaterialCommunityIcons name="account-clock" size={26} color={THEME.colors.warning} />
+                <View style={styles.pendingTextBox}>
+                  <Text style={styles.waitlistTitle}>Estás en lista de espera</Text>
+                  <Text style={styles.pendingSubtitle}>
+                    El viaje se llenó antes de que el conductor respondiera. Si alguien cancela te avisaremos y el
+                    conductor podrá aceptarte. Mientras, puedes solicitar otro viaje a la misma hora.
+                  </Text>
+                </View>
               </View>
-            </View>
+            ) : (
+              <View style={styles.pendingNotice}>
+                <MaterialCommunityIcons name="clock-outline" size={24} color={THEME.colors.accentDark} />
+                <View style={styles.pendingTextBox}>
+                  <Text style={styles.pendingTitle}>Solicitud pendiente de respuesta</Text>
+                  <Text style={styles.pendingSubtitle}>
+                    El conductor revisará tu solicitud y se te notificará cuando la acepte o rechace.
+                  </Text>
+                </View>
+              </View>
+            )}
 
             <TouchableOpacity
               style={styles.cancelBtn}
@@ -381,10 +599,21 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
               ) : (
                 <>
                   <MaterialCommunityIcons name="close-circle-outline" size={18} color={THEME.colors.error} />
-                  <Text style={styles.cancelBtnText}>Cancelar solicitud pendiente</Text>
+                  <Text style={styles.cancelBtnText}>
+                    {isWaitlisted ? 'Salir de la lista de espera' : 'Cancelar solicitud pendiente'}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
+          </View>
+        ) : isUnavailable ? (
+          <View style={styles.noticeBox}>
+            <MaterialCommunityIcons name="cancel" size={22} color={THEME.colors.textMuted} />
+            <Text style={styles.noticeText}>
+              {trip.status === 'cancelled'
+                ? 'Este viaje fue cancelado por el conductor.'
+                : 'Este viaje ya no está disponible para nuevas solicitudes.'}
+            </Text>
           </View>
         ) : isExpired ? (
           <View style={styles.noticeBox}>
@@ -401,21 +630,33 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
             </Text>
           </View>
         ) : (
-          <TouchableOpacity
-            style={[styles.requestButton, isSubmitting && styles.requestButtonDisabled]}
-            onPress={handleRequestTrip}
-            disabled={isSubmitting}
-            activeOpacity={0.85}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <MaterialCommunityIcons name="car-seat" size={22} color="#FFFFFF" />
-                <Text style={styles.requestButtonText}>Solicitar viaje</Text>
-              </>
+          <View>
+            {!joinReady && (
+              <Text style={styles.joinMissing}>
+                {joinChoice?.kind === 'proposed'
+                  ? 'Toca el mapa para marcar tu punto de unión.'
+                  : 'Elige arriba dónde te unirás al viaje.'}
+              </Text>
             )}
-          </TouchableOpacity>
+            {joinReady && chosenLabel() && (
+              <Text style={styles.joinChosen}>Te unirás en: {chosenLabel()}</Text>
+            )}
+            <TouchableOpacity
+              style={[styles.requestButton, (isSubmitting || !joinReady) && styles.requestButtonDisabled]}
+              onPress={handleRequestTrip}
+              disabled={isSubmitting || !joinReady}
+              activeOpacity={0.85}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons name="car-seat" size={22} color="#FFFFFF" />
+                  <Text style={styles.requestButtonText}>Solicitar viaje</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </ScrollView>
@@ -423,6 +664,129 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
+  flex1: {
+    flex: 1,
+  },
+  choiceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    marginTop: 8,
+    borderRadius: THEME.borderRadius.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    backgroundColor: THEME.colors.surface,
+  },
+  choiceItemActive: {
+    borderColor: THEME.colors.primary,
+    borderWidth: 1.5,
+    backgroundColor: THEME.colors.primarySoft,
+  },
+  mpBadgeActive: {
+    backgroundColor: THEME.colors.primary,
+    borderWidth: 2,
+    borderColor: THEME.colors.accent,
+  },
+  mpBadgeTextActive: {
+    color: '#FFFFFF',
+  },
+  mpBadgeStar: {
+    backgroundColor: THEME.colors.accentLight,
+  },
+  yourPointChip: {
+    backgroundColor: THEME.colors.primary,
+    borderRadius: THEME.borderRadius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  yourPointChipText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  proposedBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: THEME.borderRadius.md,
+    backgroundColor: THEME.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+  },
+  pickHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    marginBottom: 10,
+    borderRadius: THEME.borderRadius.md,
+    backgroundColor: THEME.colors.primarySoft,
+  },
+  pickHintDone: {
+    backgroundColor: THEME.colors.successBg,
+  },
+  pickHintText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.colors.primary,
+  },
+  joinSavedBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    marginTop: 4,
+    borderRadius: THEME.borderRadius.md,
+    backgroundColor: THEME.colors.primarySoft,
+    borderWidth: 1,
+    borderColor: THEME.colors.accent,
+  },
+  joinSavedLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: THEME.colors.accentDark,
+    textTransform: 'uppercase',
+  },
+  joinSavedValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.colors.primary,
+  },
+  joinSavedNote: {
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
+    marginTop: 2,
+  },
+  joinMissing: {
+    fontSize: 12,
+    color: THEME.colors.warning,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  joinChosen: {
+    fontSize: 12,
+    color: THEME.colors.primary,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  waitlistNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    backgroundColor: THEME.colors.warningBg,
+    borderRadius: THEME.borderRadius.md,
+    borderWidth: 1.5,
+    borderColor: THEME.colors.warning,
+  },
+  waitlistTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.colors.warning,
+  },
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -600,6 +964,30 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: THEME.colors.textPrimary,
+  },
+  estimateBox: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  estimateItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: THEME.colors.surfaceAlt,
+    borderRadius: THEME.borderRadius.md,
+    padding: 10,
+  },
+  estimateValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  estimateSource: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    marginTop: 6,
+    marginBottom: 12,
   },
   itineraryGrid: {
     flexDirection: 'row',

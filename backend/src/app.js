@@ -13,6 +13,10 @@ const { errorHandler, notFound } = require('./middlewares/errorHandler');
 const { auth, me } = require('./modules/auth/auth.routes');
 const catalogos = require('./modules/catalogos/catalogos.routes');
 const impacto = require('./modules/impacto/impacto.routes');
+const { vehiculos, misVehiculos } = require('./modules/vehiculos/vehiculos.routes');
+const { viajes, misViajes } = require('./modules/viajes/viajes.routes');
+const { porViaje: reservasPorViaje, reservas } = require('./modules/reservas/reservas.routes');
+const { misNotificaciones } = require('./modules/notificaciones/notificaciones.routes');
 
 const app = express();
 
@@ -53,7 +57,15 @@ app.get('/api/health', async (_req, res) => {
 
 app.use('/api', limites.general);
 app.use('/api/auth', auth);
+// Sub-rutas de /api/me primero: el router `me` solo atiende GET/PATCH /api/me.
+app.use('/api/me/vehiculos', misVehiculos);
+app.use('/api/me/viajes', misViajes);
+app.use('/api/me/notificaciones', misNotificaciones);
 app.use('/api/me', me);
+app.use('/api/vehiculos', vehiculos);
+app.use('/api/viajes/:viajeId/reservas', reservasPorViaje);
+app.use('/api/viajes', viajes);
+app.use('/api/reservas', reservas);
 app.use('/api/catalogos', catalogos);
 app.use('/api/impacto', impacto);
 
