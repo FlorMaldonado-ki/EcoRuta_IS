@@ -11,6 +11,8 @@ const catalogos = require('../catalogos/catalogos.service');
 const vehiculos = require('../vehiculos/vehiculos.service');
 const reservas = require('../reservas/reservas.service');
 const notificaciones = require('../notificaciones/notificaciones.service');
+const correos = require('../notificaciones/correos.service');
+const eco = require('../impacto/eco.service');
 const mapper = require('./viaje.mapper');
 const repo = require('./viajes.repository');
 
@@ -95,10 +97,88 @@ async function cancelar(id, conductorId) {
     await repo.marcarCancelado(db, id);
     return lista;
   });
-  // Aviso en la app a cada pasajero afectado (después del COMMIT). Los correos (RF-20) llegan en el Sprint 3.
+  // Avisos a cada pasajero afectado (después del COMMIT): en la app y por correo (RF-20).
   await notificaciones.alCancelarViaje(id, afectados);
+  correos.alCancelarViaje(id, afectados);
   return { trip: await obtener(id, conductorId), cancelledReservations: afectados.length, afectados };
 }
+
+/**
+ * RF-19 (HU-21) · POST /api/viajes/:id/finalizar. En una transacción:
+ * viaje → finalizado (finalizado_en = now()) y, si hubo pasajeros aceptados,
+ * registro del CO₂ ahorrado en impacto_viaje (RF-21). Sin pasajeros, el viaje
+ * se finaliza sin registro de impacto (RN-07).
+ * @returns {{ trip: object, impact: object|null }}
+ */
+async function finalizar(id, conductorId) {
+  const impact = await withTransaction(async (db) => {
+    const viaje = await repo.bloquear(db, id);
+    if (!viaje || viaje.conductor_id !== conductorId) throw noEncontrado(); // RNF-09: ajeno = no existe
+    if (viaje.estado === 'cancelado') throw new AppError(409, 'VIAJE_CANCELADO', 'El viaje está cancelado; no se puede finalizar.');
+    if (viaje.estado === 'finalizado') throw new AppError(409, 'VIAJE_YA_FINALIZADO', 'Este viaje ya estaba finalizado.');
+    if (new Date(viaje.salida_en).getTime() > Date.now()) {
+      throw new AppError(409, 'VIAJE_AUN_NO_SALE', 'Podrás finalizar el viaje después de la hora de salida.');
+    }
+    await repo.marcarFinalizado(db, id);
+    return eco.calcularImpacto(id, db);
+  });
+  return { trip: await obtener(id, conductorId), impact };
+}
+
+/**
+ * RF-13 (HU-18) · PATCH /api/viajes/:id. Solo el conductor, solo si el viaje
+ * sigue publicado, aún no sale y no tiene reservas aceptadas. Mismas reglas que
+ * publicar (RN-03, RN-04, RN-11); si cambian origen o destino se recalcula la
+ * distancia y la duración (RF-10).
+ */
+async function editar(id, conductorId, body) {
+  const noEditable = (v) => {
+    if (!v || v.conductor_id !== conductorId) throw noEncontrado(); // RNF-09
+    if (v.estado !== 'publicado' || new Date(v.salida_en).getTime() <= Date.now()) {
+      throw new AppError(409, 'VIAJE_NO_EDITABLE', 'Solo puedes editar viajes publicados que aún no salen.');
+    }
+  };
+  const actual = await repo.buscarPorId(pool, id); // se valida y se estima fuera del bloqueo
+  noEditable(actual);
+  if (await repo.contarAceptadas(pool, id) > 0) throw conReservas();
+
+  const { puntosCampus } = await catalogos.obtener();
+  const cambios = mapper.parseViaje(body, { puntosCampus }, { parcial: true, actual });
+
+  // RN-03: los asientos no pueden exceder la capacidad del vehículo (el nuevo o el actual).
+  if (cambios.vehiculo_id !== undefined || cambios.asientos_totales !== undefined) {
+    const vehiculo = await vehiculos.paraPublicar(conductorId, cambios.vehiculo_id ?? actual.vehiculo_id);
+    const asientos = cambios.asientos_totales ?? actual.asientos_totales;
+    if (asientos > vehiculo.capacidad - 1) {
+      const msg = `Tu vehículo permite ofrecer máximo ${vehiculo.capacidad - 1} asiento(s).`;
+      throw new AppError(422, 'ASIENTOS_EXCEDEN_CAPACIDAD', msg, { seats: msg });
+    }
+  }
+  // Sin reservas aceptadas, todos los asientos vuelven a estar disponibles.
+  if (cambios.asientos_totales !== undefined) cambios.asientos_disponibles = cambios.asientos_totales;
+
+  // RF-10: nueva estimación solo si cambió algún extremo.
+  const cambioRuta = ['origen_lat', 'origen_lng', 'destino_lat', 'destino_lng']
+    .some((k) => cambios[k] !== undefined && Number(cambios[k]) !== Number(actual[k]));
+  if (cambioRuta) {
+    const e = await ruteo.estimar(
+      { lat: cambios.origen_lat, lng: cambios.origen_lng },
+      { lat: cambios.destino_lat, lng: cambios.destino_lng },
+    );
+    Object.assign(cambios, { distancia_km: e.distanciaKm, duracion_min: e.duracionMin, distancia_fuente: e.fuente });
+  }
+
+  await withTransaction(async (db) => {
+    const v = await repo.bloquear(db, id); // re-verificar con el viaje bloqueado: pudo cambiar mientras estimábamos
+    noEditable(v);
+    if (await repo.contarAceptadas(db, id) > 0) throw conReservas();
+    await repo.actualizar(db, id, cambios);
+  });
+  return obtener(id, conductorId);
+}
+
+const conReservas = () => new AppError(409, 'VIAJE_CON_RESERVAS',
+  'Este viaje ya tiene pasajeros aceptados; no se puede editar. Si necesitas cambiarlo, cancélalo y publica uno nuevo.');
 
 /** RF-18 · GET /api/me/viajes?role=driver|passenger&status=upcoming|in_progress|history&page */
 async function misViajes(usuarioId, query) {
@@ -122,4 +202,4 @@ async function misViajes(usuarioId, query) {
   return { items, page, pageSize: opciones.limite, hasMore, role, status };
 }
 
-module.exports = { obtener, publicar, buscar, cancelar, misViajes };
+module.exports = { obtener, publicar, buscar, cancelar, finalizar, editar, misViajes };
