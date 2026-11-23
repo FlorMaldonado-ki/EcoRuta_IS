@@ -17,10 +17,15 @@ import {
   cancelTripByDriver,
   errorMessage,
   isWaitlisted,
+  canEditTrip,
+  canFinishTrip,
   type MyTrips,
 } from '../services/tripService';
 import type { TripDTO, UserDTO } from '../types/api';
 import { useNotifications } from '../hooks/useNotifications';
+import { useFinishTrip } from '../hooks/useFinishTrip';
+import { TripImpactBadge } from '../components/TripImpactBadge';
+import { confirmAction } from '../utils/notify';
 
 interface MyTripsScreenProps {
   currentUser: UserDTO;
@@ -28,6 +33,7 @@ interface MyTripsScreenProps {
   onSelectTripDetail: (trip: TripDTO) => void;
   onGoToRequests: () => void;
   onGoToPublishTrip: () => void;
+  onEditTrip: (trip: TripDTO) => void;
 }
 
 type RoleMode = 'passenger' | 'driver';
@@ -39,6 +45,7 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
   onSelectTripDetail,
   onGoToRequests,
   onGoToPublishTrip,
+  onEditTrip,
 }) => {
   const [roleMode, setRoleMode] = useState<RoleMode>('passenger');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
@@ -79,6 +86,23 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser.id]);
 
+  // SCRUM-61 · RF-19: finalizar con confirmación y resumen del CO₂; después se recarga la lista.
+  const { requestFinish, finishingId } = useFinishTrip(currentUser, () => { loadData(); });
+
+  /** RF-13: con pasajeros aceptados no se edita; se sugiere cancelar y publicar de nuevo. */
+  const handleEdit = (trip: TripDTO) => {
+    if (canEditTrip(trip)) {
+      onEditTrip(trip);
+      return;
+    }
+    confirmAction(
+      'No se puede editar',
+      'Este viaje ya tiene pasajeros aceptados. Si necesitas cambiar la hora o el punto, cancélalo (se avisará a los pasajeros) y publica uno nuevo.',
+      'Cancelar viaje',
+      () => setCancelTripTarget(trip),
+    );
+  };
+
   // Filtrado de viajes de pasajero
   const filteredPassengerList = useMemo(() => {
     return passengerTrips.filter((item) => {
@@ -96,8 +120,10 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
     return driverTrips
       .filter(({ trip, bucket }) => {
         const isCancelled = trip.status === 'cancelled';
-        if (statusFilter === 'active') return bucket !== 'history' && !isCancelled;
-        if (statusFilter === 'finished') return bucket === 'history' && !isCancelled;
+        // Un viaje cuya hora ya pasó pero no se ha finalizado sigue "activo": falta finalizarlo (RF-19).
+        const pendingFinish = trip.status === 'published' || trip.status === 'in_progress';
+        if (statusFilter === 'active') return (bucket !== 'history' || pendingFinish) && !isCancelled;
+        if (statusFilter === 'finished') return trip.status === 'finished';
         return isCancelled;
       })
       .map(({ trip }) => trip);
@@ -451,6 +477,11 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       </View>
                     </View>
 
+                    {/* SCRUM-64 · RF-21: CO₂ del viaje finalizado */}
+                    {trip.status === 'finished' && trip.impact && isAccepted ? (
+                      <TripImpactBadge impact={trip.impact} asPassenger compact />
+                    ) : null}
+
                     {/* Botones de acción del pasajero */}
                     <View style={styles.tripCardActions}>
                       <TouchableOpacity
@@ -527,6 +558,9 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
               filteredDriverList.map((trip) => {
                 const { time, date } = formatDateTime(trip.departureAt);
                 const isActing = actionLoadingId === trip.id;
+                const isFinishing = finishingId === trip.id;
+                const isUpcoming = trip.status === 'published' && new Date(trip.departureAt).getTime() > Date.now();
+                const readyToFinish = canFinishTrip(trip);
 
                 return (
                   <View key={trip.id} style={styles.tripCard}>
@@ -544,7 +578,9 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       <View
                         style={[
                           styles.badgePill,
-                          trip.status === 'published'
+                          readyToFinish
+                            ? { backgroundColor: THEME.colors.warningBg }
+                            : trip.status === 'published'
                             ? { backgroundColor: THEME.colors.successBg }
                             : trip.status === 'finished'
                             ? { backgroundColor: THEME.colors.surfaceAlt }
@@ -554,14 +590,18 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                         <Text
                           style={[
                             styles.badgePillText,
-                            trip.status === 'published'
+                            readyToFinish
+                              ? { color: THEME.colors.warning }
+                              : trip.status === 'published'
                               ? { color: THEME.colors.success }
                               : trip.status === 'finished'
                               ? { color: THEME.colors.textMuted }
                               : { color: THEME.colors.error },
                           ]}
                         >
-                          {trip.status === 'published'
+                          {readyToFinish
+                            ? 'Por finalizar'
+                            : trip.status === 'published'
                             ? 'Publicado'
                             : trip.status === 'finished'
                             ? 'Completado'
@@ -604,8 +644,17 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       </View>
                     </View>
 
+                    {/* SCRUM-64 · RF-21: CO₂ del viaje finalizado */}
+                    {trip.status === 'finished' ? (
+                      trip.impact ? (
+                        <TripImpactBadge impact={trip.impact} compact />
+                      ) : (
+                        <Text style={styles.noImpactText}>Sin pasajeros aceptados: no se registró CO₂ ahorrado.</Text>
+                      )
+                    ) : null}
+
                     {/* Acciones de Conductor */}
-                    {trip.status === 'published' && new Date(trip.departureAt).getTime() > Date.now() && (
+                    {isUpcoming && (
                       <View style={styles.tripCardActions}>
                         <TouchableOpacity
                           style={styles.detailBtn}
@@ -616,6 +665,19 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                           <Text style={styles.detailBtnText}>Ver detalle</Text>
                         </TouchableOpacity>
 
+                        {/* SCRUM-59 · RF-13: editar (solo sin pasajeros aceptados) */}
+                        <TouchableOpacity
+                          style={styles.detailBtn}
+                          onPress={() => handleEdit(trip)}
+                          disabled={isActing}
+                          activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel="Editar viaje"
+                        >
+                          <MaterialCommunityIcons name="pencil-outline" size={16} color={THEME.colors.primary} />
+                          <Text style={styles.detailBtnText}>Editar</Text>
+                        </TouchableOpacity>
+
                         <TouchableOpacity
                           style={styles.cancelTripBtn}
                           onPress={() => setCancelTripTarget(trip)}
@@ -624,7 +686,45 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                         >
                           {isActing ? <ActivityIndicator size="small" color={THEME.colors.error} /> : null}
                           <MaterialCommunityIcons name="cancel" size={16} color={THEME.colors.error} />
-                          <Text style={styles.cancelTripBtnText}>Cancelar Viaje</Text>
+                          <Text style={styles.cancelTripBtnText}>Cancelar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {/* SCRUM-61 · RF-19: finalizar (deshabilitado hasta la hora de salida) */}
+                    {(isUpcoming || readyToFinish) && (
+                      <View style={styles.finishRow}>
+                        {readyToFinish ? (
+                          <TouchableOpacity
+                            style={styles.detailBtn}
+                            onPress={() => onSelectTripDetail(trip)}
+                            activeOpacity={0.8}
+                          >
+                            <MaterialCommunityIcons name="map-search-outline" size={16} color={THEME.colors.primary} />
+                            <Text style={styles.detailBtnText}>Ver detalle</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                        <TouchableOpacity
+                          style={[styles.finishBtn, !readyToFinish && styles.finishBtnDisabled]}
+                          onPress={() => requestFinish(trip)}
+                          disabled={!readyToFinish || isFinishing}
+                          activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityState={{ disabled: !readyToFinish }}
+                          accessibilityLabel="Finalizar viaje"
+                        >
+                          {isFinishing ? (
+                            <ActivityIndicator size="small" color={THEME.colors.textInverse} />
+                          ) : (
+                            <MaterialCommunityIcons
+                              name="flag-checkered"
+                              size={16}
+                              color={readyToFinish ? THEME.colors.textInverse : THEME.colors.textMuted}
+                            />
+                          )}
+                          <Text style={[styles.finishBtnText, !readyToFinish && styles.finishBtnTextDisabled]}>
+                            {readyToFinish ? 'Finalizar viaje' : `Finalizar desde las ${time}`}
+                          </Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -1043,26 +1143,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: THEME.colors.error,
   },
-  finishBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 40,
-    borderRadius: THEME.borderRadius.md,
-    borderWidth: 1.5,
-    borderColor: THEME.colors.successBorder,
-    backgroundColor: THEME.colors.successBg,
-    gap: 6,
-  },
-  finishBtnDisabled: {
-    opacity: 0.5,
-  },
-  finishBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: THEME.colors.success,
-  },
   cancelTripBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -1079,6 +1159,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: THEME.colors.error,
+  },
+  finishRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  finishBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 40,
+    borderRadius: THEME.borderRadius.md,
+    backgroundColor: THEME.colors.success,
+    gap: 6,
+  },
+  finishBtnDisabled: {
+    backgroundColor: THEME.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+  },
+  finishBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: THEME.colors.textInverse,
+  },
+  finishBtnTextDisabled: {
+    color: THEME.colors.textMuted,
+  },
+  noImpactText: {
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    marginTop: 8,
   },
   modalOverlay: {
     flex: 1,

@@ -17,6 +17,7 @@ import type { UserDTO } from '../types/api';
 
 export type AppNavScreen =
   | 'home'
+  | 'my_impact'
   | 'passenger_search'
   | 'publish_trip'
   | 'driver_route'
@@ -110,6 +111,21 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                 ]}
               >
                 Inicio y Eco-Impacto
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.menuItem, currentScreen === 'my_impact' && styles.menuItemActive]}
+              onPress={() => handleItemPress('my_impact')}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons
+                name="leaf"
+                size={22}
+                color={currentScreen === 'my_impact' ? THEME.colors.primary : THEME.colors.textSecondary}
+              />
+              <Text style={[styles.menuItemText, currentScreen === 'my_impact' && styles.menuItemTextActive]}>
+                Mi Impacto (CO₂)
               </Text>
             </TouchableOpacity>
 

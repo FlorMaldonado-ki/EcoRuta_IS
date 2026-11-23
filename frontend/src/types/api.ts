@@ -56,7 +56,35 @@ export interface CommunityImpactDTO {
   kmAvoided: number;
   treesEquivalent: number;
 }
-export interface MyImpactDTO { co2TodayKg: number; co2TotalKg: number; trips: number }
+export interface ImpactBreakdown { co2TotalKg: number; co2TodayKg: number; trips: number }
+/** RF-23 · GET /api/impacto/me */
+export interface MyImpactDTO {
+  co2TodayKg: number;
+  co2TotalKg: number;
+  trips: number;
+  kmAvoided?: number;
+  asDriver?: ImpactBreakdown;
+  asPassenger?: ImpactBreakdown;
+}
+/** RF-23 · un renglón de GET /api/impacto/me/viajes */
+export interface MyImpactTripDTO {
+  tripId: string;
+  role: 'driver' | 'passenger';
+  co2Kg: number;            // CO₂ atribuido a mí en ese viaje
+  kmAvoided: number;
+  passengers: number;
+  distanceKm: number;
+  emissionFactor: number;
+  direction: TripDirection;
+  origin: string;
+  destination: string;
+  departureAt: string;
+  finishedAt: string;
+  calculatedAt: string;
+}
+export interface MyImpactTripsPage { items: MyImpactTripDTO[]; page: number; pageSize: number; hasMore: boolean }
+/** CO₂ ahorrado por un viaje finalizado (RF-21) */
+export interface TripImpact { co2Kg: number; passengers: number; distanceKm: number; emissionFactor: number; passengerCo2Kg: number }
 
 /** Información del vehículo del conductor (Sprint 2) */
 export interface VehicleDTO {
@@ -156,6 +184,8 @@ export interface TripDTO {
   isMine?: boolean;             // soy el conductor
   pendingRequests?: number;     // solo para el conductor
   acceptedPassengers?: number;  // solo para el conductor
+  finishedAt?: string | null;
+  impact?: TripImpact | null;   // RF-21 · CO₂ que ahorró (viaje finalizado con pasajeros)
 }
 
 export interface ReservationDTO {

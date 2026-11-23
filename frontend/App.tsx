@@ -10,6 +10,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { setAuthToken } from './src/services/apiClient';
 import { resetLocalState } from './src/services/tripStorage';
 import { NotificationsProvider } from './src/hooks/useNotifications';
+import { ImpactProvider } from './src/hooks/useImpact';
 import { AlertBanner } from './src/components/AlertBanner';
 import { NotificationsCenterModal } from './src/screens/NotificationsCenterModal';
 import type { Session } from './src/types/api';
@@ -114,9 +115,12 @@ export default function App() {
           {currentScreen === 'authenticated' && session && (
             // key: al cambiar de usuario se reinicia la bandeja y las alertas
             <NotificationsProvider key={session.user.id}>
-              <AuthenticatedHomeScreen user={session.user} onLogout={handleLogout} />
-              <NotificationsCenterModal />
-              <AlertBanner />
+              {/* Impacto compartido (RF-26): se actualiza al finalizar un viaje */}
+              <ImpactProvider>
+                <AuthenticatedHomeScreen user={session.user} onLogout={handleLogout} />
+                <NotificationsCenterModal />
+                <AlertBanner />
+              </ImpactProvider>
             </NotificationsProvider>
           )}
         </View>

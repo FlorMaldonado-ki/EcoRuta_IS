@@ -106,6 +106,25 @@ export interface ApiTripDTO {
   isMine?: boolean;            // soy el conductor
   pendingRequests?: number;    // solo para el conductor
   acceptedPassengers?: number; // solo para el conductor
+  impact?: ApiTripImpact | null; // RF-21 · solo viajes finalizados con pasajeros (null si no hubo)
+}
+
+/** CO₂ ahorrado por un viaje finalizado (RF-21). */
+export interface ApiTripImpact {
+  co2Kg: number;           // total del viaje: distancia × FE × pasajeros
+  passengers: number;
+  distanceKm: number;
+  emissionFactor: number;  // kg CO₂/km con el que se calculó (RF-22)
+  passengerCo2Kg: number;  // lo que se atribuye a cada pasajero (distancia × FE)
+}
+
+/** PATCH /api/viajes/:id (RF-13): solo los campos que cambian. */
+export type ApiUpdateTripRequest = Partial<ApiCreateTripRequest>;
+
+/** POST /api/viajes/:id/finalizar (RF-19) */
+export interface ApiFinishTripResponse {
+  trip: ApiTripDTO;
+  impact: Omit<ApiTripImpact, 'passengerCo2Kg'> | null;
 }
 
 /** POST /api/viajes. El extremo del campus lo pone la API con campusPoint. */

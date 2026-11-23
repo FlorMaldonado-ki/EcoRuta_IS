@@ -10,6 +10,7 @@ import type {
   ApiCancelReservationResponse,
   ApiCancelTripResponse,
   ApiCreateTripRequest,
+  ApiFinishTripResponse,
   ApiMyTripsPage,
   ApiMyTripsRole,
   ApiMyTripsStatus,
@@ -19,6 +20,7 @@ import type {
   ApiJoinPointRequest,
   ApiTripDTO,
   ApiTripDirection,
+  ApiUpdateTripRequest,
 } from '../types/apiBackend';
 import type { ReservationDTO, ReservationStatus, TripDTO, UserDTO } from '../types/api';
 
@@ -72,6 +74,8 @@ export function toTrip(t: ApiTripDTO, fallbackDriver?: DriverFallback): TripDTO 
     isMine: t.isMine,
     pendingRequests: t.pendingRequests,
     acceptedPassengers: t.acceptedPassengers,
+    finishedAt: t.finishedAt ?? null,
+    impact: t.impact ?? null,
   };
 }
 
@@ -180,6 +184,32 @@ export async function cancelTripByDriver(tripId: string): Promise<{ message: str
       : 'El viaje ya no aparecerá en la búsqueda. No tenía pasajeros inscritos.',
   };
 }
+
+/** RF-13 · PATCH /api/viajes/:id con solo los campos que cambian (409 VIAJE_CON_RESERVAS si ya hay aceptados). */
+export async function updateTrip(tripId: string, changes: ApiUpdateTripRequest, currentUser: UserDTO): Promise<TripDTO> {
+  const t = await apiRequest<ApiTripDTO>(`/api/viajes/${tripId}`, { method: 'PATCH', body: changes });
+  return toTrip(t, driverFromUser(currentUser));
+}
+
+export interface FinishTripResult {
+  trip: TripDTO;
+  /** null si el viaje no tuvo pasajeros aceptados (RN-07) */
+  impact: ApiFinishTripResponse['impact'];
+}
+
+/** RF-19 · POST /api/viajes/:id/finalizar: el viaje pasa a finalizado y se registra el CO₂ (RF-21). */
+export async function finishTrip(tripId: string, currentUser: UserDTO): Promise<FinishTripResult> {
+  const res = await apiRequest<ApiFinishTripResponse>(`/api/viajes/${tripId}/finalizar`, { method: 'POST' });
+  return { trip: toTrip(res.trip, driverFromUser(currentUser)), impact: res.impact };
+}
+
+/** ¿Ya se puede finalizar? Solo el conductor, viaje vigente y después de la hora de salida (RF-19). */
+export const canFinishTrip = (trip: Pick<TripDTO, 'status' | 'departureAt'>, now = Date.now()) =>
+  (trip.status === 'published' || trip.status === 'in_progress') && new Date(trip.departureAt).getTime() <= now;
+
+/** ¿Se puede editar? Publicado, aún no sale y sin pasajeros aceptados (RF-13). */
+export const canEditTrip = (trip: Pick<TripDTO, 'status' | 'departureAt' | 'acceptedPassengers'>, now = Date.now()) =>
+  trip.status === 'published' && new Date(trip.departureAt).getTime() > now && (trip.acceptedPassengers ?? 0) === 0;
 
 // ── Reservas (RF-15 a RF-17) ────────────────────────────────────────────────
 

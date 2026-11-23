@@ -13,11 +13,12 @@ import { Header } from '../components/Header';
 import { InputField } from '../components/InputField';
 import { THEME } from '../constants/theme';
 import { getDriverRoute } from '../services/tripStorage';
-import { publishTrip, errorMessage, localYmd } from '../services/tripService';
+import { publishTrip, updateTrip, errorMessage, localYmd } from '../services/tripService';
+import { ApiError } from '../services/apiClient';
 import { getMyVehicles } from '../services/vehicleService';
-import type { TripDTO, UserDTO } from '../types/api';
+import type { DriverRoute, TripDTO, UserDTO } from '../types/api';
 import { formatTripEstimate, estimateSourceLabel } from '../utils/tripEstimate';
-import type { ApiVehicleDTO } from '../types/apiBackend';
+import type { ApiVehicleDTO, ApiUpdateTripRequest } from '../types/apiBackend';
 
 const NOTES_MAX = 300;
 const MAX_POINTS = 8;
@@ -28,7 +29,29 @@ interface PublishTripScreenProps {
   onGoToVehicleSetup: () => void;
   onGoToRouteSetup: () => void;
   onSuccessPublished: () => void;
+  /** SCRUM-59 · RF-13: con un viaje, la pantalla funciona como "Editar viaje" con sus datos precargados. */
+  editingTrip?: TripDTO;
+  onSuccessEdited?: (trip: TripDTO) => void;
 }
+
+const horaHHMM = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+/** El viaje que se edita, en la forma de ruta que usa el formulario. */
+const routeFromTrip = (t: TripDTO): DriverRoute => ({
+  id: t.id,
+  direction: t.direction,
+  campusPoint: t.campusPoint,
+  origin: t.origin,
+  destination: t.destination,
+  meetingPoints: t.meetingPoints,
+  isConfigured: true,
+  distanceKm: t.distanceKm,
+  updatedAt: t.departureAt,
+});
+
+/** Firma comparable de una lista de puntos (para saber si cambió). */
+const firmaPuntos = (pts: { name: string; lat: number; lng: number }[]) =>
+  pts.map((p) => `${p.name}|${p.lat}|${p.lng}`).join(';');
 
 export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
   currentUser,
@@ -36,8 +59,18 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
   onGoToVehicleSetup,
   onGoToRouteSetup,
   onSuccessPublished,
+  editingTrip,
+  onSuccessEdited,
 }) => {
-  const route = getDriverRoute();
+  const isEditing = !!editingTrip;
+  const savedRoute = getDriverRoute();
+  // En edición se usa el trayecto del viaje; opcionalmente se reemplaza por la ruta actual del conductor (RF-10 recalcula).
+  const [useCurrentRoute, setUseCurrentRoute] = useState(false);
+  const route = editingTrip && !useCurrentRoute ? routeFromTrip(editingTrip) : savedRoute;
+  const savedRouteDiffers =
+    isEditing && !!savedRoute && (savedRoute.meetingPoints || []).length > 0 &&
+    (savedRoute.origin.lat !== editingTrip!.origin.lat || savedRoute.origin.lng !== editingTrip!.origin.lng ||
+      savedRoute.destination.lat !== editingTrip!.destination.lat || savedRoute.destination.lng !== editingTrip!.destination.lng);
 
   // Vehículo registrado en el backend (fuente única: GET /api/me/vehiculos)
   const [vehicle, setVehicle] = useState<ApiVehicleDTO | null>(null);
@@ -45,8 +78,10 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
   const maxSeats = vehicle?.maxSeats ?? 1;
 
   // Selección de fecha rápida
-  const [dateOption, setDateOption] = useState<'today' | 'tomorrow' | 'custom'>('today');
-  const [customDate, setCustomDate] = useState<string>('');
+  const [dateOption, setDateOption] = useState<'today' | 'tomorrow' | 'custom'>(isEditing ? 'custom' : 'today');
+  const [customDate, setCustomDate] = useState<string>(
+    editingTrip ? localYmd(new Date(editingTrip.departureAt)) : '',
+  );
 
   // Hora de salida (HH:MM)
   // Generar sugerencia de hora válida (al menos 35 min en el futuro)
@@ -55,14 +90,24 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
     return d.toTimeString().substring(0, 5); // "HH:MM"
   }, []);
 
-  const [departureTime, setDepartureTime] = useState<string>(defaultDepartureTime);
-  const [seats, setSeats] = useState<number>(1);
-  const [notes, setNotes] = useState<string>('');
+  const [departureTime, setDepartureTime] = useState<string>(
+    editingTrip ? horaHHMM(new Date(editingTrip.departureAt)) : defaultDepartureTime,
+  );
+  const [seats, setSeats] = useState<number>(editingTrip?.seatsTotal ?? 1);
+  const [notes, setNotes] = useState<string>(editingTrip?.notes ?? '');
 
   // Selección de puntos de encuentro que aplican a este viaje
   const [selectedPointIds, setSelectedPointIds] = useState<Set<string>>(
     new Set((route?.meetingPoints || []).map((p) => p.id))
   );
+  // Al cambiar de trayecto (viaje ↔ ruta actual) se seleccionan todos los puntos del nuevo trayecto.
+  useEffect(() => {
+    if (!isEditing) return;
+    setSelectedPointIds(new Set((route?.meetingPoints || []).map((p) => p.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useCurrentRoute]);
+  // 409 VIAJE_CON_RESERVAS: alguien fue aceptado mientras editabas → se sugiere cancelar.
+  const [editConflict, setEditConflict] = useState(false);
 
   // Estados de validación y carga
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -140,13 +185,16 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
 
     const now = Date.now();
     const minNoticeMs = 30 * 60_000; // RN-04: mínimo 30 min de anticipación
+    // En edición, la hora solo se valida si cambió (la API tampoco la revisa si no se envía).
+    const departureChanged = !editingTrip ||
+      Math.abs(scheduledDateTime.getTime() - new Date(editingTrip.departureAt).getTime()) >= 60_000;
 
-    if (scheduledDateTime.getTime() <= now) {
+    if (departureChanged && scheduledDateTime.getTime() <= now) {
       setErrorMsg('No puedes publicar un viaje en una fecha u hora que ya pasó.');
       return;
     }
 
-    if (scheduledDateTime.getTime() < now + minNoticeMs) {
+    if (departureChanged && scheduledDateTime.getTime() < now + minNoticeMs) {
       setErrorMsg('Conforme a las reglas del programa (RN-04), debes publicar el viaje con al menos 30 minutos de anticipación.');
       return;
     }
@@ -172,6 +220,44 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
       return;
     }
 
+    const meetingPointsBody = activeMeetingPoints
+      .sort((a, b) => a.order - b.order)
+      .map((p) => ({ name: p.name, description: p.description || null, lat: p.lat, lng: p.lng }));
+
+    if (editingTrip) {
+      // Solo se envía lo que cambió (PATCH parcial).
+      const changes: ApiUpdateTripRequest = {};
+      if (departureChanged) changes.departureAt = scheduledDateTime.toISOString();
+      if (seats !== editingTrip.seatsTotal) changes.seats = seats;
+      if (trimmedNotes !== (editingTrip.notes ?? '')) changes.notes = trimmedNotes || null;
+      if (useCurrentRoute) {
+        changes.direction = route.direction;
+        changes.campusPoint = route.campusPoint;
+        if (route.direction === 'to_campus') changes.origin = route.origin;
+        else changes.destination = route.destination;
+      }
+      if (useCurrentRoute || firmaPuntos(meetingPointsBody) !== firmaPuntos(editingTrip.meetingPoints)) {
+        changes.meetingPoints = meetingPointsBody;
+      }
+      if (Object.keys(changes).length === 0) {
+        setErrorMsg('No hiciste ningún cambio.');
+        return;
+      }
+      setIsSubmitting(true);
+      setEditConflict(false);
+      try {
+        const updated = await updateTrip(editingTrip.id, changes, currentUser);
+        setPublishedTrip(updated);
+        setShowSuccessModal(true);
+      } catch (err) {
+        if (err instanceof ApiError && err.code === 'VIAJE_CON_RESERVAS') setEditConflict(true);
+        setErrorMsg(errorMessage(err));
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const created = await publishTrip(
@@ -183,9 +269,7 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
           departureAt: scheduledDateTime.toISOString(),
           seats,
           notes: trimmedNotes || null,
-          meetingPoints: activeMeetingPoints
-            .sort((a, b) => a.order - b.order)
-            .map((p) => ({ name: p.name, description: p.description || null, lat: p.lat, lng: p.lng })),
+          meetingPoints: meetingPointsBody,
         },
         currentUser
       );
@@ -201,10 +285,11 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
   // Validación de requisitos previos
   const hasVehicle = loadingVehicle || !!vehicle;
   const hasRoute = !!route && (route.meetingPoints || []).length > 0;
+  const submitLabel = isEditing ? 'Guardar cambios' : 'Registrar Viaje';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Header subtitle="Registro de Viaje Compartido" />
+      <Header subtitle={isEditing ? 'Editar viaje' : 'Registro de Viaje Compartido'} />
 
       <View style={styles.body}>
         {/* Barra superior */}
@@ -257,6 +342,36 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
             <MaterialCommunityIcons name="alert-circle" size={18} color={THEME.colors.error} />
             <Text style={styles.errorText}>{errorMsg}</Text>
           </View>
+        )}
+        {editConflict && (
+          <TouchableOpacity style={styles.warningActionBtn} onPress={onBack} activeOpacity={0.8}>
+            <Text style={styles.warningActionBtnText}>Volver para cancelar el viaje</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Editar: usar la ruta actual del conductor en lugar del trayecto del viaje (RF-10 recalcula) */}
+        {isEditing && savedRouteDiffers && (
+          <TouchableOpacity
+            style={[styles.meetingPointRow, useCurrentRoute && styles.meetingPointRowActive]}
+            onPress={() => setUseCurrentRoute((v) => !v)}
+            activeOpacity={0.8}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: useCurrentRoute }}
+          >
+            <MaterialCommunityIcons
+              name={useCurrentRoute ? 'checkbox-marked' : 'checkbox-blank-outline'}
+              size={20}
+              color={useCurrentRoute ? THEME.colors.primary : THEME.colors.textMuted}
+            />
+            <View style={styles.meetingPointInfo}>
+              <Text style={[styles.meetingPointName, useCurrentRoute && styles.meetingPointNameActive]}>
+                Usar mi ruta actual
+              </Text>
+              <Text style={styles.meetingPointDesc}>
+                Cambia el punto de salida o llegada por el de tu ruta guardada; la distancia y la duración se recalculan.
+              </Text>
+            </View>
+          </TouchableOpacity>
         )}
 
         {/* Resumen del Trayecto */}
@@ -475,7 +590,7 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
           ) : (
             <>
               <MaterialCommunityIcons name="check-circle-outline" size={22} color={THEME.colors.textInverse} />
-              <Text style={styles.publishBtnText}>Registrar Viaje</Text>
+              <Text style={styles.publishBtnText}>{submitLabel}</Text>
             </>
           )}
         </TouchableOpacity>
@@ -489,9 +604,13 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
               <MaterialCommunityIcons name="check" size={42} color={THEME.colors.textInverse} />
             </View>
 
-            <Text style={styles.modalSuccessTitle}>¡Viaje Registrado con Éxito!</Text>
+            <Text style={styles.modalSuccessTitle}>
+              {isEditing ? '¡Cambios guardados!' : '¡Viaje Registrado con Éxito!'}
+            </Text>
             <Text style={styles.modalSuccessMsg}>
-              Tu viaje compartido ha sido publicado en EcoRuta Escolar. Los pasajeros de la comunidad TecNM podrán consultar tu ruta y solicitar un lugar.
+              {isEditing
+                ? 'Tu viaje se actualizó. Quienes lo busquen verán ya la información nueva.'
+                : 'Tu viaje compartido ha sido publicado en EcoRuta Escolar. Los pasajeros de la comunidad TecNM podrán consultar tu ruta y solicitar un lugar.'}
             </Text>
 
             {publishedTrip && (
@@ -506,11 +625,12 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
               style={styles.modalPrimaryBtn}
               onPress={() => {
                 setShowSuccessModal(false);
-                onSuccessPublished();
+                if (isEditing && publishedTrip) onSuccessEdited?.(publishedTrip);
+                else onSuccessPublished();
               }}
               activeOpacity={0.8}
             >
-              <Text style={styles.modalPrimaryBtnText}>Ver Mis Viajes</Text>
+              <Text style={styles.modalPrimaryBtnText}>{isEditing ? 'Listo' : 'Ver Mis Viajes'}</Text>
             </TouchableOpacity>
           </View>
         </View>
