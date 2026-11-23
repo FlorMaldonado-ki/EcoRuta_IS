@@ -15,7 +15,7 @@ if (disponible) {
   process.env.JWT_SECRET = process.env.JWT_SECRET || 'secreto-solo-para-pruebas-0123456789-abcdef';
   process.env.NODE_ENV = 'test';
   process.env.ROUTING_PROVIDER = 'haversine'; // sin depender de internet
-  process.env.MAIL_DRIVER = 'console';
+  process.env.MAIL_DRIVER = 'memoria'; // sin imprimir: la salida de consola rompe el reporte de node:test
   process.env.STORAGE_DRIVER = 'local';
   process.env.PG_POOL_MAX = process.env.PG_POOL_MAX || '25';
 }
