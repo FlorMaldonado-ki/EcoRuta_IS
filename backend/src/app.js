@@ -13,6 +13,7 @@ const { errorHandler, notFound } = require('./middlewares/errorHandler');
 const { auth, me } = require('./modules/auth/auth.routes');
 const catalogos = require('./modules/catalogos/catalogos.routes');
 const impacto = require('./modules/impacto/impacto.routes');
+const parametros = require('./modules/parametros/parametros.routes');
 const { vehiculos, misVehiculos } = require('./modules/vehiculos/vehiculos.routes');
 const { viajes, misViajes } = require('./modules/viajes/viajes.routes');
 const { porViaje: reservasPorViaje, reservas } = require('./modules/reservas/reservas.routes');
@@ -68,6 +69,7 @@ app.use('/api/viajes', viajes);
 app.use('/api/reservas', reservas);
 app.use('/api/catalogos', catalogos);
 app.use('/api/impacto', impacto);
+app.use('/api/parametros', parametros);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -7,6 +7,7 @@
  *   smtp    → envío real por SMTP con nodemailer. RECOMENDADO con Gmail + contraseña
  *             de aplicación: el correo sale firmado por Gmail (SPF/DKIM/DMARC válidos)
  *             y los servidores de Microsoft 365 del TecNM sí lo aceptan.
+ *   memoria → guarda los correos en `bandeja` sin imprimir ni enviar (pruebas automatizadas).
  *   brevo   → API REST de Brevo. Solo es confiable si MAIL_FROM usa un dominio propio
  *             autenticado en Brevo; con @outlook.com / @gmail.com como remitente,
  *             Microsoft 365 lo descarta como suplantación aunque Brevo diga "delivered".
@@ -101,10 +102,14 @@ function enviarBrevo({ to, subject, html, text }) {
 }
 
 // ── API pública ─────────────────────────────────────────────────────────────
+/** Correos "enviados" con MAIL_DRIVER=memoria (solo pruebas; se vacía con bandeja.length = 0). */
+const bandeja = [];
+
 async function enviar(msg) {
   switch (DRIVER) {
     case 'smtp': return enviarSmtp(msg);
     case 'brevo': return enviarBrevo(msg);
+    case 'memoria': bandeja.push(msg); return true;
     default:
       console.log(`\n📧 [MODO CONSOLE] CORREO\nPara: ${msg.to}\nAsunto: ${msg.subject}\n\n${msg.text || msg.html}\n`);
       return true;
@@ -120,6 +125,25 @@ async function enviarSeguro(msg) {
     console.error(`❌ [mailer] no se pudo enviar "${msg.subject}" a ${msg.to}:`, err.message);
     return false;
   }
+}
+
+/**
+ * RF-20 / RNF-29 · Envío que NO bloquea la respuesta de la API: se agenda para
+ * después del ciclo actual y cualquier error queda solo en el log. Usa
+ * module.exports.enviarSeguro para que las pruebas puedan interceptarlo.
+ * @returns {Promise<boolean>} se resuelve al terminar el intento (nunca rechaza)
+ */
+function enviarEnSegundoPlano(msg) {
+  return new Promise((resolve) => {
+    setImmediate(() => {
+      Promise.resolve()
+        .then(() => module.exports.enviarSeguro(msg))
+        .then(resolve, (err) => {
+          console.error(`❌ [mailer] error inesperado enviando "${msg.subject}":`, err.message);
+          resolve(false);
+        });
+    });
+  });
 }
 
 /** RF-02: enlace de verificación de correo. Devuelve true si se envió. */
@@ -146,6 +170,8 @@ async function verificarConfiguracion() {
     if (/@(outlook|hotmail|live|gmail|yahoo)\./i.test(email)) {
       console.warn(`⚠️  [mailer] Brevo con remitente ${email}: los correos a @tecnm.mx probablemente se descartarán. Usa MAIL_DRIVER=smtp con Gmail.`);
     }
+  } else if (DRIVER === 'memoria') {
+    console.log('[mailer] MAIL_DRIVER=memoria: los correos se guardan en memoria (pruebas).');
   } else {
     console.log('[mailer] MAIL_DRIVER=console: los correos solo se imprimen en la terminal.');
   }
@@ -154,8 +180,10 @@ async function verificarConfiguracion() {
 module.exports = {
   enviar,
   enviarSeguro,
+  enviarEnSegundoPlano,
   enviarVerificacion,
   enviarRecuperacion,
   verificarConfiguracion,
   plantillas,
+  bandeja,
 };

@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Header } from '../components/Header';
@@ -18,12 +19,14 @@ import { DriverTestRouteScreen } from './DriverTestRouteScreen';
 import { PublishTripScreen } from './PublishTripScreen';
 import { DriverRequestsScreen } from './DriverRequestsScreen';
 import { MyTripsScreen } from './MyTripsScreen';
+import { MyImpactScreen } from './MyImpactScreen';
 import { THEME } from '../constants/theme';
-import { getCommunityImpact, getMyImpact } from '../services/catalogService';
 import { getDriverRoute } from '../services/tripStorage';
+import { useImpact } from '../hooks/useImpact';
+import { formatKg, formatKm } from '../utils/format';
 import { useNotifications, type NotifSection } from '../hooks/useNotifications';
 import { SectionBadge } from '../components/SectionBadge';
-import type { CommunityImpactDTO, MyImpactDTO, UserDTO, TripDTO, DriverRoute } from '../types/api';
+import type { UserDTO, TripDTO, DriverRoute } from '../types/api';
 
 interface AuthenticatedHomeScreenProps {
   user: UserDTO;
@@ -39,7 +42,9 @@ type ActiveScreen =
   | 'driver_test_route'
   | 'publish_trip'
   | 'driver_requests'
-  | 'my_trips';
+  | 'my_trips'
+  | 'my_impact'
+  | 'edit_trip';
 
 /** Pantalla a la que lleva cada sección con insignia. */
 const SECTION_SCREEN: Record<NotifSection, ActiveScreen> = {
@@ -55,17 +60,16 @@ const SCREEN_SECTION: Partial<Record<ActiveScreen, NotifSection>> = {
 
 const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
 
-const formatKg = (kg: number) =>
-  `${kg.toLocaleString('es-MX', { maximumFractionDigits: kg < 100 ? 2 : 0 })} kg`;
-
 export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = ({
   user,
   onLogout,
 }) => {
   const isAlumno = user.userType === 'alumno';
-  const [community, setCommunity] = useState<CommunityImpactDTO | null>(null);
-  const [mine, setMine] = useState<MyImpactDTO | null>(null);
+  const { community, communityStatus, communityError, mine, refresh: refreshImpact } = useImpact();
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>('home');
+  // Viaje que se está editando (RF-13) y a dónde regresar al terminar
+  const [editingTrip, setEditingTrip] = useState<TripDTO | null>(null);
+  const [editReturnTo, setEditReturnTo] = useState<ActiveScreen>('my_trips');
   const [selectedTrip, setSelectedTrip] = useState<TripDTO | null>(null);
   // Pantalla a la que regresa el detalle del viaje (búsqueda o mis viajes)
   const [detailReturnTo, setDetailReturnTo] = useState<ActiveScreen>('passenger_search');
@@ -73,10 +77,19 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { unread: unreadCount, openCenter, badges, markSectionSeen, registerNavigator } = useNotifications();
 
+  // SCRUM-67: al volver al inicio se refresca el total (la primera carga la hace ImpactProvider).
+  const firstHome = useRef(true);
   useEffect(() => {
-    getCommunityImpact().then(setCommunity).catch(() => setCommunity(null));
-    getMyImpact().then(setMine).catch(() => setMine(null));
-  }, []);
+    if (activeScreen !== 'home') return;
+    if (firstHome.current) { firstHome.current = false; return; }
+    refreshImpact();
+  }, [activeScreen, refreshImpact]);
+
+  const startEditing = (trip: TripDTO, returnTo: ActiveScreen) => {
+    setEditingTrip(trip);
+    setEditReturnTo(returnTo);
+    setActiveScreen('edit_trip');
+  };
 
   const navigate = (screen: ActiveScreen) => {
     setActiveScreen(screen);
@@ -101,6 +114,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
     // map drawer keys to internal screens
     const map: Partial<Record<AppNavScreen, ActiveScreen>> = {
       home: 'home',
+      my_impact: 'my_impact',
       passenger_search: 'passenger_search',
       publish_trip: 'publish_trip',
       driver_route: 'driver_route_setup',
@@ -141,6 +155,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
         currentUser={user}
         onBack={() => navigate(detailReturnTo)}
         onTripUpdated={(updatedTrip) => setSelectedTrip(updatedTrip)}
+        onEditTrip={(t) => startEditing(t, 'trip_detail')}
       />
     );
   }
@@ -197,6 +212,34 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
     );
   }
 
+  if (activeScreen === 'edit_trip' && editingTrip) {
+    return (
+      <PublishTripScreen
+        currentUser={user}
+        editingTrip={editingTrip}
+        onBack={() => navigate(editReturnTo)}
+        onGoToVehicleSetup={() => navigate('driver_profile_vehicle')}
+        onGoToRouteSetup={() => navigate('driver_route_setup')}
+        onSuccessPublished={() => navigate('my_trips')}
+        onSuccessEdited={(updated) => {
+          setEditingTrip(null);
+          if (editReturnTo === 'trip_detail') setSelectedTrip(updated);
+          navigate(editReturnTo);
+        }}
+      />
+    );
+  }
+
+  if (activeScreen === 'my_impact') {
+    return (
+      <MyImpactScreen
+        currentUser={user}
+        onBack={goHome}
+        onGoToSearch={() => navigate('passenger_search')}
+      />
+    );
+  }
+
   if (activeScreen === 'driver_requests') {
     return (
       <DriverRequestsScreen
@@ -218,6 +261,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
         }}
         onGoToRequests={() => navigate('driver_requests')}
         onGoToPublishTrip={() => navigate('publish_trip')}
+        onEditTrip={(t) => startEditing(t, 'my_trips')}
       />
     );
   }
@@ -275,17 +319,54 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
               <MaterialCommunityIcons name="leaf" size={22} color={THEME.colors.accent} />
               <Text style={styles.impactTitle}>Impacto Ecológico Comunitario</Text>
             </View>
-            <Text style={styles.impactNumber}>
-              {community ? formatKg(community.co2SavedKg) : '—'}
-            </Text>
-            <Text style={styles.impactSubtitle}>
-              de CO₂ ahorrado por la comunidad del TecNM
-              {community ? ` · ${community.sharedTrips} viajes compartidos` : ''}
-            </Text>
+            {/* SCRUM-67 · RF-24: estados de carga, error con reintento y formato con miles */}
+            {communityStatus === 'loading' && !community ? (
+              <ActivityIndicator style={styles.impactLoader} color={THEME.colors.accent} accessibilityLabel="Cargando impacto" />
+            ) : communityStatus === 'error' && !community ? (
+              <View style={styles.impactErrorBox}>
+                <Text style={styles.impactSubtitle}>
+                  {communityError ?? 'No pudimos cargar el impacto de la comunidad.'}
+                </Text>
+                <TouchableOpacity
+                  style={styles.impactRetryBtn}
+                  onPress={refreshImpact}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                >
+                  <MaterialCommunityIcons name="refresh" size={16} color={THEME.colors.primaryDark} />
+                  <Text style={styles.impactRetryText}>Reintentar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.impactNumber}>{formatKg(community?.co2SavedKg ?? 0)}</Text>
+                <Text style={styles.impactSubtitle}>de CO₂ ahorrado por la comunidad del TecNM</Text>
+                <View style={styles.impactStatsRow}>
+                  <View style={styles.impactStat}>
+                    <MaterialCommunityIcons name="car-multiple" size={16} color={THEME.colors.accent} />
+                    <Text style={styles.impactStatText}>
+                      {plural(community?.sharedTrips ?? 0, 'viaje compartido', 'viajes compartidos')}
+                    </Text>
+                  </View>
+                  <View style={styles.impactStat}>
+                    <MaterialCommunityIcons name="road-variant" size={16} color={THEME.colors.accent} />
+                    <Text style={styles.impactStatText}>{formatKm(community?.kmAvoided ?? 0)} evitados</Text>
+                  </View>
+                </View>
+              </>
+            )}
             {mine ? (
-              <Text style={styles.impactSubtitle}>
-                Tú: {formatKg(mine.co2TodayKg)} hoy · {formatKg(mine.co2TotalKg)} en total
-              </Text>
+              <TouchableOpacity
+                style={styles.impactMineBtn}
+                onPress={() => navigate('my_impact')}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+              >
+                <Text style={styles.impactMineText}>
+                  Tú: {formatKg(mine.co2TodayKg)} hoy · {formatKg(mine.co2TotalKg)} en total
+                </Text>
+                <MaterialCommunityIcons name="chevron-right" size={18} color={THEME.colors.accent} />
+              </TouchableOpacity>
             ) : null}
           </View>
 
@@ -511,7 +592,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.85)',
     marginTop: 4,
+    textAlign: 'center',
   },
+  impactLoader: { marginVertical: 14 },
+  impactErrorBox: { alignItems: 'center', gap: 10, marginVertical: 6 },
+  impactRetryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: THEME.colors.accent,
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+  },
+  impactRetryText: { fontSize: 13, fontWeight: '800', color: THEME.colors.primaryDark },
+  impactStatsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 14, marginTop: 10 },
+  impactStat: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  impactStatText: { fontSize: 12, fontWeight: '700', color: THEME.colors.textInverse },
+  impactMineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  impactMineText: { fontSize: 12, fontWeight: '700', color: THEME.colors.textInverse },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -15,10 +15,13 @@ SELECT v.*,
        mr.id AS mi_reserva_id, mr.estado AS mi_reserva_estado, mr.creada_en AS mi_reserva_creada_en,
        mr.cancelacion_tardia AS mi_reserva_tardia, mr.punto_union AS mi_reserva_punto,
        (SELECT count(*) FROM reserva r WHERE r.viaje_id = v.id AND r.estado = 'solicitada') AS solicitudes_pendientes,
-       (SELECT count(*) FROM reserva r WHERE r.viaje_id = v.id AND r.estado = 'aceptada')   AS pasajeros_aceptados
+       (SELECT count(*) FROM reserva r WHERE r.viaje_id = v.id AND r.estado = 'aceptada')   AS pasajeros_aceptados,
+       iv.co2_kg AS impacto_co2_kg, iv.pasajeros AS impacto_pasajeros,
+       iv.distancia_km AS impacto_distancia_km, iv.factor_emision AS impacto_factor
 FROM viaje v
 JOIN usuario  u  ON u.id  = v.conductor_id
 JOIN vehiculo ve ON ve.id = v.vehiculo_id
+LEFT JOIN impacto_viaje iv ON iv.viaje_id = v.id
 LEFT JOIN LATERAL (
   -- La reserva más relevante del usuario en este viaje: primero la vigente, luego la más reciente.
   SELECT r.id, r.estado, r.creada_en, r.cancelacion_tardia, r.punto_union
@@ -49,6 +52,12 @@ async function insertar(db, conductorId, v) {
   return rows[0].id;
 }
 
+/** Fila del viaje sin bloqueo (lecturas previas a una transacción). */
+async function buscarPorId(db, id) {
+  const { rows } = await db.query('SELECT * FROM viaje WHERE id = $1', [id]);
+  return rows[0] || null;
+}
+
 /** Bloquea la fila del viaje dentro de una transacción (cancelar, finalizar, editar). */
 async function bloquear(db, id) {
   const { rows } = await db.query('SELECT * FROM viaje WHERE id = $1 FOR UPDATE', [id]);
@@ -57,6 +66,34 @@ async function bloquear(db, id) {
 
 async function marcarCancelado(db, id) {
   await db.query(`UPDATE viaje SET estado = 'cancelado', cancelado_en = now() WHERE id = $1`, [id]);
+}
+
+/** RF-19 · viaje → finalizado. El CHECK ck_viaje_finaliza_tras_salida protege la hora. */
+async function marcarFinalizado(db, id) {
+  await db.query(`UPDATE viaje SET estado = 'finalizado', finalizado_en = now() WHERE id = $1`, [id]);
+}
+
+async function contarAceptadas(db, viajeId) {
+  const { rows } = await db.query(
+    `SELECT count(*) AS n FROM reserva WHERE viaje_id = $1 AND estado = 'aceptada'`, [viajeId]);
+  return rows[0].n;
+}
+
+/** Columnas que la edición puede tocar (RF-13). Cualquier otra clave se ignora. */
+const EDITABLES = [
+  'vehiculo_id', 'sentido', 'punto_campus',
+  'origen_texto', 'origen_lat', 'origen_lng', 'destino_texto', 'destino_lat', 'destino_lng',
+  'salida_en', 'asientos_totales', 'asientos_disponibles',
+  'distancia_km', 'duracion_min', 'distancia_fuente', 'notas', 'puntos_encuentro',
+];
+
+/** RF-13 · UPDATE parcial del viaje (solo columnas de EDITABLES). */
+async function actualizar(db, id, cambios) {
+  const claves = EDITABLES.filter((k) => cambios[k] !== undefined);
+  if (!claves.length) return;
+  const sets = claves.map((k, i) => (k === 'puntos_encuentro' ? `${k} = $${i + 2}::jsonb` : `${k} = $${i + 2}`));
+  const valores = claves.map((k) => (k === 'puntos_encuentro' ? JSON.stringify(cambios[k] || []) : cambios[k]));
+  await db.query(`UPDATE viaje SET ${sets.join(', ')} WHERE id = $1`, [id, ...valores]);
 }
 
 // ── RF-11 · Búsqueda (ver db/queries/buscar_viajes.sql) ──────────────────────
@@ -132,9 +169,12 @@ async function listarComoConductor(db, conductorId, estado, { limite, pagina }) 
     `SELECT v.*,
             ve.marca AS vehiculo_marca, ve.modelo AS vehiculo_modelo, ve.color AS vehiculo_color, ve.placas AS vehiculo_placas,
             (SELECT count(*) FROM reserva r WHERE r.viaje_id = v.id AND r.estado = 'solicitada') AS solicitudes_pendientes,
-            (SELECT count(*) FROM reserva r WHERE r.viaje_id = v.id AND r.estado = 'aceptada')   AS pasajeros_aceptados
+            (SELECT count(*) FROM reserva r WHERE r.viaje_id = v.id AND r.estado = 'aceptada')   AS pasajeros_aceptados,
+            iv.co2_kg AS impacto_co2_kg, iv.pasajeros AS impacto_pasajeros,
+            iv.distancia_km AS impacto_distancia_km, iv.factor_emision AS impacto_factor
        FROM viaje v
        JOIN vehiculo ve ON ve.id = v.vehiculo_id
+       LEFT JOIN impacto_viaje iv ON iv.viaje_id = v.id
       WHERE v.conductor_id = $1 AND ${FILTRO_CONDUCTOR[estado]}
       ORDER BY ${orden}, v.id
       LIMIT $2 OFFSET $3`,
@@ -166,11 +206,14 @@ async function listarComoPasajero(db, pasajeroId, estado, { limite, pagina }) {
             u.telefono AS conductor_telefono,
             ve.marca AS vehiculo_marca, ve.modelo AS vehiculo_modelo, ve.color AS vehiculo_color, ve.placas AS vehiculo_placas,
             mr.id AS mi_reserva_id, mr.estado AS mi_reserva_estado, mr.creada_en AS mi_reserva_creada_en,
-            mr.cancelacion_tardia AS mi_reserva_tardia, mr.punto_union AS mi_reserva_punto
+            mr.cancelacion_tardia AS mi_reserva_tardia, mr.punto_union AS mi_reserva_punto,
+            iv.co2_kg AS impacto_co2_kg, iv.pasajeros AS impacto_pasajeros,
+            iv.distancia_km AS impacto_distancia_km, iv.factor_emision AS impacto_factor
        FROM mr
        JOIN viaje    v  ON v.id  = mr.viaje_id
        JOIN usuario  u  ON u.id  = v.conductor_id
        JOIN vehiculo ve ON ve.id = v.vehiculo_id
+       LEFT JOIN impacto_viaje iv ON iv.viaje_id = v.id
       WHERE ${FILTRO_PASAJERO[estado]}
       ORDER BY ${orden}, v.id
       LIMIT $2 OFFSET $3`,
@@ -179,4 +222,4 @@ async function listarComoPasajero(db, pasajeroId, estado, { limite, pagina }) {
   return rows;
 }
 
-module.exports = { buscarDetalle, insertar, bloquear, marcarCancelado, buscar, listarComoConductor, listarComoPasajero };
+module.exports = { buscarDetalle, buscarPorId, insertar, bloquear, marcarCancelado, marcarFinalizado, contarAceptadas, actualizar, buscar, listarComoConductor, listarComoPasajero };

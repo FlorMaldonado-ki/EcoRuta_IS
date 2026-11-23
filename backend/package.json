@@ -16,7 +16,8 @@
     "db:bundle": "node db/build-neon-bundle.js",
     "test:smoke": "node scripts/smoke-test.js",
     "test": "node test/correr.js",
-    "test:concurrencia": "node scripts/concurrencia-asiento.js"
+    "test:concurrencia": "node scripts/concurrencia-asiento.js",
+    "test:flujo": "node scripts/flujo-central.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

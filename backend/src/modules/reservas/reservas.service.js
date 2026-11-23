@@ -9,6 +9,7 @@ const { pool, withTransaction } = require('../../config/db');
 const { AppError } = require('../../shared/errors');
 const { esUuid } = require('../../shared/validacion');
 const notificaciones = require('../notificaciones/notificaciones.service');
+const correos = require('../notificaciones/correos.service');
 const mapper = require('./reserva.mapper');
 const repo = require('./reservas.repository');
 
@@ -36,8 +37,9 @@ async function solicitar(viajeId, pasajeroId, body = {}) {
     const puntoUnion = mapper.parsePuntoUnion(body, viaje.puntos_encuentro || []);
     return repo.insertar(db, viajeId, pasajeroId, puntoUnion);
   });
-  // Aviso en la app al conductor (después del COMMIT). RF-20 (Sprint 3) añadirá el correo.
+  // Avisos al conductor (después del COMMIT): en la app y por correo en segundo plano (RF-20).
   await notificaciones.alSolicitar(reserva.id);
+  correos.alSolicitar(reserva.id);
   return mapper.toReservaDTO(reserva);
 }
 
@@ -83,8 +85,9 @@ async function responder(reservaId, conductorId, body) {
     }
     throw new AppError(409, 'VIAJE_NO_DISPONIBLE', 'El viaje ya no admite pasajeros.');
   });
-  // Aviso en la app al pasajero (después del COMMIT). RF-20 (Sprint 3) añadirá el correo.
+  // Avisos al pasajero (después del COMMIT): en la app y por correo en segundo plano (RF-20).
   await notificaciones.alResponder(fila.id);
+  correos.alResponder(fila.id);
   for (const id of esperasCanceladas) await notificaciones.alCancelarReserva(id, 'solicitada');
   const completa = await repo.buscarConPasajero(pool, fila.id);
   const viaje = await repo.asientosDelViaje(pool, fila.viaje_id);
@@ -106,8 +109,9 @@ async function cancelar(reservaId, pasajeroId) {
     }
     throw new AppError(409, 'VIAJE_YA_SALIO', 'El viaje ya salió o terminó; ya no puedes cancelar tu lugar.');
   });
-  // Aviso en la app al conductor (después del COMMIT). RF-20 (Sprint 3) añadirá el correo.
+  // Avisos al conductor (después del COMMIT): en la app y por correo en segundo plano (RF-20).
   await notificaciones.alCancelarReserva(fila.id, fila.estado_anterior);
+  correos.alCancelarReserva(fila.id, fila.estado_anterior);
   const viaje = await repo.asientosDelViaje(pool, fila.viaje_id);
   // Lista de espera: estaba lleno y se liberó el lugar → avisar a quienes esperan.
   if (fila.estado_anterior === 'aceptada' && viaje.asientos_disponibles === 1) await notificaciones.alLugarLiberado(fila.viaje_id);

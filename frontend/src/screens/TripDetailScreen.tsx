@@ -13,7 +13,9 @@ import { Header } from '../components/Header';
 import { InteractiveMap } from '../components/InteractiveMap';
 import { InputField } from '../components/InputField';
 import { THEME } from '../constants/theme';
-import { requestSeat, cancelReservation, getTripById, errorMessage as apiErrorMessage } from '../services/tripService';
+import { requestSeat, cancelReservation, getTripById, errorMessage as apiErrorMessage, canFinishTrip, canEditTrip } from '../services/tripService';
+import { useFinishTrip } from '../hooks/useFinishTrip';
+import { TripImpactBadge } from '../components/TripImpactBadge';
 import { confirmAction } from '../utils/notify';
 import { useNotifications } from '../hooks/useNotifications';
 import { formatDistanceKm, formatDurationMin, estimateSourceLabel } from '../utils/tripEstimate';
@@ -34,6 +36,8 @@ interface TripDetailScreenProps {
   currentUser: UserDTO;
   onBack: () => void;
   onTripUpdated: (updatedTrip: TripDTO) => void;
+  /** Conductor: abrir "Editar viaje" (RF-13). */
+  onEditTrip?: (trip: TripDTO) => void;
 }
 
 export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
@@ -41,8 +45,11 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
   currentUser,
   onBack,
   onTripUpdated,
+  onEditTrip,
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // SCRUM-61 · RF-19: al finalizar, el detalle muestra el viaje ya finalizado con su CO₂.
+  const { requestFinish, finishingId } = useFinishTrip(currentUser, (r) => onTripUpdated(r.trip));
   const { showAlert } = useNotifications();
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -528,12 +535,62 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
 
       {/* ACCIONES Y BOTÓN DE SOLICITUD */}
       <View style={styles.actionCard}>
+        {/* SCRUM-64 · RF-21: CO₂ que ahorró el viaje finalizado */}
+        {trip.status === 'finished' && trip.impact ? (
+          <TripImpactBadge impact={trip.impact} asPassenger={!isDriver} />
+        ) : null}
+
         {isDriver ? (
-          <View style={styles.noticeBox}>
-            <MaterialCommunityIcons name="account-star" size={22} color={THEME.colors.primary} />
-            <Text style={styles.noticeText}>
-              Este es tu viaje publicado. Puedes administrar las solicitudes desde Mis Viajes.
-            </Text>
+          <View>
+            <View style={styles.noticeBox}>
+              <MaterialCommunityIcons name="account-star" size={22} color={THEME.colors.primary} />
+              <Text style={styles.noticeText}>
+                {trip.status === 'finished'
+                  ? trip.impact
+                    ? 'Viaje finalizado. ¡Gracias por compartir tu trayecto!'
+                    : 'Viaje finalizado sin pasajeros aceptados: no se registró CO₂ ahorrado.'
+                  : trip.status === 'cancelled'
+                  ? 'Cancelaste este viaje.'
+                  : 'Este es tu viaje publicado. Puedes administrar las solicitudes desde Mis Viajes.'}
+              </Text>
+            </View>
+
+            {(trip.status === 'published' || trip.status === 'in_progress') && (
+              <TouchableOpacity
+                style={[styles.finishBtn, !canFinishTrip(trip) && styles.finishBtnDisabled]}
+                onPress={() => requestFinish(trip)}
+                disabled={!canFinishTrip(trip) || finishingId === trip.id}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !canFinishTrip(trip) }}
+              >
+                {finishingId === trip.id ? (
+                  <ActivityIndicator size="small" color={THEME.colors.textInverse} />
+                ) : (
+                  <MaterialCommunityIcons
+                    name="flag-checkered"
+                    size={18}
+                    color={canFinishTrip(trip) ? THEME.colors.textInverse : THEME.colors.textMuted}
+                  />
+                )}
+                <Text style={[styles.finishBtnText, !canFinishTrip(trip) && styles.finishBtnTextDisabled]}>
+                  {canFinishTrip(trip) ? 'Finalizar viaje' : `Podrás finalizar a partir de las ${timeFormatted}`}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {onEditTrip && trip.status === 'published' && !isExpired && (
+              canEditTrip(trip) ? (
+                <TouchableOpacity style={styles.editBtn} onPress={() => onEditTrip(trip)} activeOpacity={0.8} accessibilityRole="button">
+                  <MaterialCommunityIcons name="pencil-outline" size={18} color={THEME.colors.primary} />
+                  <Text style={styles.editBtnText}>Editar viaje</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.editHint}>
+                  Ya tienes pasajeros aceptados: para cambiar la hora o el punto, cancela el viaje desde Mis Viajes y publica uno nuevo.
+                </Text>
+              )
+            )}
           </View>
         ) : isAccepted ? (
           <View>
@@ -1255,5 +1312,35 @@ const styles = StyleSheet.create({
     color: THEME.colors.textSecondary,
     marginTop: 2,
   },
+  finishBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 48,
+    borderRadius: THEME.borderRadius.md,
+    backgroundColor: THEME.colors.success,
+    marginTop: 12,
+  },
+  finishBtnDisabled: {
+    backgroundColor: THEME.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+  },
+  finishBtnText: { fontSize: 14, fontWeight: '800', color: THEME.colors.textInverse },
+  finishBtnTextDisabled: { color: THEME.colors.textMuted, fontWeight: '700', fontSize: 13 },
+  editBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 44,
+    borderRadius: THEME.borderRadius.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.primary,
+    marginTop: 10,
+  },
+  editBtnText: { fontSize: 14, fontWeight: '800', color: THEME.colors.primary },
+  editHint: { fontSize: 12, color: THEME.colors.textSecondary, marginTop: 10, textAlign: 'center' },
 });
 

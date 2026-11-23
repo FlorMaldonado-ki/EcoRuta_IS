@@ -131,6 +131,23 @@ function toViajeDTO(row, { verContacto = false } = {}) {
     }),
     ...(row.solicitudes_pendientes !== undefined && { pendingRequests: row.solicitudes_pendientes }),
     ...(row.pasajeros_aceptados !== undefined && { acceptedPassengers: row.pasajeros_aceptados }),
+    // RF-21 · CO₂ ahorrado (solo viajes finalizados con pasajeros; null si no hubo, RN-07)
+    ...(row.impacto_co2_kg !== undefined && { impact: toImpactoDTO(row) }),
+  };
+}
+
+/** Columnas impacto_* del LEFT JOIN → { co2Kg, passengers, distanceKm, emissionFactor, myCo2Kg } | null */
+function toImpactoDTO(row) {
+  if (row.impacto_co2_kg === null || row.impacto_co2_kg === undefined) return null;
+  const distancia = Number(row.impacto_distancia_km);
+  const factor = Number(row.impacto_factor);
+  return {
+    co2Kg: Number(row.impacto_co2_kg),
+    passengers: Number(row.impacto_pasajeros),
+    distanceKm: distancia,
+    emissionFactor: factor,
+    // RF-23: al pasajero se le atribuye su asiento; al conductor, el total del viaje.
+    passengerCo2Kg: Math.round((distancia * factor + Number.EPSILON) * 1000) / 1000,
   };
 }
 
@@ -168,7 +185,7 @@ function parseViaje(body, ctx, { parcial = false, actual = null } = {}) {
   const direccionCliente = body.direction ?? (actual && DIRECCION_BD_A_CLIENTE[actual.sentido]);
   const sentido = DIRECCION_CLIENTE_A_BD[direccionCliente];
   if (presente('direction') && !sentido) errors.direction = 'Indica si vas hacia el campus o sales del campus.';
-  else if (sentido) out.sentido = sentido;
+  else if (sentido && presente('direction')) out.sentido = sentido; // en edición, solo si se envió
 
   const claveCampus = body.campusPoint ?? actual?.punto_campus;
   const punto = ctx.puntosCampus.find((p) => p.clave === claveCampus);
@@ -301,7 +318,7 @@ function parseBusqueda(q, { ahora = new Date() } = {}) {
 }
 
 module.exports = {
-  toViajeDTO, toViajeInsert, parseViaje, parseBusqueda, hoyLocal,
+  toViajeDTO, toImpactoDTO, toViajeInsert, parseViaje, parseBusqueda, hoyLocal,
   toPuntosEncuentroDTO, toPuntoUnionDTO, parsePuntosEncuentro, MAX_PUNTOS_ENCUENTRO,
   DIRECCION_CLIENTE_A_BD, DIRECCION_BD_A_CLIENTE, ESTADO_BD_A_CLIENTE, ESTADO_RESERVA_BD_A_CLIENTE,
   ANTICIPACION_MIN, TAM_PAGINA,
