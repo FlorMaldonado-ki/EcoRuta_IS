@@ -20,6 +20,11 @@ import { PublishTripScreen } from './PublishTripScreen';
 import { DriverRequestsScreen } from './DriverRequestsScreen';
 import { MyTripsScreen } from './MyTripsScreen';
 import { MyImpactScreen } from './MyImpactScreen';
+import { MyRatingsScreen } from './MyRatingsScreen';
+import { MyDocumentsScreen } from './MyDocumentsScreen';
+import { EmergencyContactScreen } from './EmergencyContactScreen';
+import { AdminPanelScreen } from './admin/AdminPanelScreen';
+import { RatingReminderBanner } from '../components/trust/RatingReminderBanner';
 import { THEME } from '../constants/theme';
 import { getDriverRoute } from '../services/tripStorage';
 import { useImpact } from '../hooks/useImpact';
@@ -44,18 +49,24 @@ type ActiveScreen =
   | 'driver_requests'
   | 'my_trips'
   | 'my_impact'
-  | 'edit_trip';
+  | 'edit_trip'
+  | 'my_ratings'
+  | 'my_documents'
+  | 'emergency_contact'
+  | 'admin';
 
 /** Pantalla a la que lleva cada sección con insignia. */
 const SECTION_SCREEN: Record<NotifSection, ActiveScreen> = {
   search: 'passenger_search',
   myTrips: 'my_trips',
   requests: 'driver_requests',
+  documents: 'my_documents',
 };
 const SCREEN_SECTION: Partial<Record<ActiveScreen, NotifSection>> = {
   passenger_search: 'search',
   my_trips: 'myTrips',
   driver_requests: 'requests',
+  my_documents: 'documents',
 };
 
 const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
@@ -65,6 +76,8 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
   onLogout,
 }) => {
   const isAlumno = user.userType === 'alumno';
+  // Rol de seguridad que entrega la API; ser conductor o pasajero no es un rol.
+  const isAdmin = user.role === 'admin';
   const { community, communityStatus, communityError, mine, refresh: refreshImpact } = useImpact();
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>('home');
   // Viaje que se está editando y a dónde regresar al terminar
@@ -122,6 +135,10 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
       driver_requests: 'driver_requests',
       my_trips: 'my_trips',
       driver_profile_vehicle: 'driver_profile_vehicle',
+      my_ratings: 'my_ratings',
+      my_documents: 'my_documents',
+      emergency_contact: 'emergency_contact',
+      ...(isAdmin ? { admin: 'admin' as const } : {}),
     };
     const target = map[screen];
     if (target) navigate(target);
@@ -253,6 +270,23 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
     );
   }
 
+  if (activeScreen === 'my_ratings') {
+    return <MyRatingsScreen currentUser={user} onBack={goHome} onGoToMyTrips={() => navigate('my_trips')} />;
+  }
+
+  if (activeScreen === 'my_documents') {
+    return <MyDocumentsScreen onBack={goHome} />;
+  }
+
+  if (activeScreen === 'emergency_contact') {
+    return <EmergencyContactScreen onBack={goHome} />;
+  }
+
+  // El panel solo existe para administradores (la API además rechaza a cualquier otro con 403).
+  if (activeScreen === 'admin' && isAdmin) {
+    return <AdminPanelScreen currentUser={user} onExit={goHome} />;
+  }
+
   if (activeScreen === 'driver_requests') {
     return (
       <DriverRequestsScreen
@@ -324,6 +358,25 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
               </View>
             </View>
           </View>
+
+          <RatingReminderBanner />
+
+          {isAdmin ? (
+            <TouchableOpacity
+              style={styles.adminCard}
+              onPress={() => navigate('admin')}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir el panel de administración"
+            >
+              <MaterialCommunityIcons name="shield-account" size={26} color={THEME.colors.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.adminCardTitle}>Panel de administración</Text>
+                <Text style={styles.adminCardSub}>Documentos, reportes y usuarios</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={22} color={THEME.colors.accent} />
+            </TouchableOpacity>
+          ) : null}
 
           <View style={styles.impactCard}>
             <View style={styles.impactHeader}>
@@ -485,6 +538,36 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
             </TouchableOpacity>
           </View>
 
+          {/* ── Mi cuenta y seguridad ── */}
+          <Text style={styles.sectionTitle}>Mi Cuenta y Seguridad</Text>
+
+          <View style={styles.quickGrid}>
+            <TouchableOpacity style={styles.quickCard} onPress={() => navigate('my_ratings')} activeOpacity={0.8}>
+              <MaterialCommunityIcons name="star-outline" size={28} color={THEME.colors.primary} />
+              <Text style={styles.quickCardTitle}>Calificaciones</Text>
+              <Text style={styles.quickCardSub}>Recibidas y escritas</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.quickCard, badges.documents.count > 0 && (badges.documents.critical ? styles.quickCardCritical : styles.quickCardNotify)]}
+              onPress={() => navigate('my_documents')}
+              activeOpacity={0.8}
+            >
+              <SectionBadge count={badges.documents.count} critical={badges.documents.critical} />
+              <MaterialCommunityIcons name="file-document-outline" size={28} color={badges.documents.critical ? THEME.colors.error : THEME.colors.primary} />
+              <Text style={styles.quickCardTitle}>Mis Documentos</Text>
+              <Text style={[styles.quickCardSub, badges.documents.critical && styles.quickCardSubCritical]}>
+                {badges.documents.count > 0 ? 'Hay novedades en tu revisión' : 'Estado de la revisión'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.quickCard} onPress={() => navigate('emergency_contact')} activeOpacity={0.8}>
+              <MaterialCommunityIcons name="account-heart-outline" size={28} color={THEME.colors.primary} />
+              <Text style={styles.quickCardTitle}>Contacto de Emergencia</Text>
+              <Text style={styles.quickCardSub}>Registra o actualiza</Text>
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
             style={styles.logoutBtn}
             onPress={onLogout}
@@ -629,6 +712,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
   },
   impactMineText: { fontSize: 12, fontWeight: '700', color: THEME.colors.textInverse },
+  adminCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: THEME.colors.primary,
+    borderRadius: THEME.borderRadius.lg,
+    padding: 16,
+    marginBottom: 16,
+    minHeight: 64,
+  },
+  adminCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: THEME.colors.textInverse,
+  },
+  adminCardSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
+  },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',

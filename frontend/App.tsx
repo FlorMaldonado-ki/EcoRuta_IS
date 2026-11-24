@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { RegisterScreen } from './src/screens/RegisterScreen';
@@ -7,8 +7,10 @@ import { LoginScreen } from './src/screens/LoginScreen';
 import { AuthenticatedHomeScreen } from './src/screens/AuthenticatedHomeScreen';
 import { THEME } from './src/constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { setAuthToken } from './src/services/apiClient';
-import { resetLocalState } from './src/services/tripStorage';
+import { ApiError, setAuthToken, setUnauthorizedHandler } from './src/services/apiClient';
+import { getMe } from './src/services/authService';
+import { loadLocalState, resetLocalState } from './src/services/tripStorage';
+import { borrarSesion, guardarToken, leerToken } from './src/services/sessionStorage';
 import { NotificationsProvider } from './src/hooks/useNotifications';
 import { ImpactProvider } from './src/hooks/useImpact';
 import { AlertBanner } from './src/components/AlertBanner';
@@ -20,20 +22,68 @@ type ScreenType = 'login' | 'register' | 'authenticated';
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('login');
   const [session, setSession] = useState<Session | null>(null);
+  // En web, si quedó un token guardado, primero se valida antes de mostrar el inicio de sesión.
+  const [restoring, setRestoring] = useState<boolean>(() => leerToken() !== null);
 
-  const handleLoginSuccess = (newSession: Session) => {
+  const startSession = useCallback((newSession: Session) => {
     resetLocalState();
     setAuthToken(newSession.token);
+    loadLocalState(newSession.user.id);
     setSession(newSession);
     setCurrentScreen('authenticated');
+  }, []);
+
+  const handleLoginSuccess = (newSession: Session) => {
+    guardarToken(newSession.token);
+    startSession(newSession);
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
+    borrarSesion();
     resetLocalState();
     setAuthToken(null);
     setSession(null);
     setCurrentScreen('login');
-  };
+  }, []);
+
+  // Si la API rechaza el token (venció), se cierra la sesión en lugar de dejar la app a medias.
+  useEffect(() => {
+    setUnauthorizedHandler(handleLogout);
+    return () => setUnauthorizedHandler(null);
+  }, [handleLogout]);
+
+  // Recargar la página (Expo Web) ya no cierra la sesión: se recupera con el token guardado.
+  useEffect(() => {
+    const token = leerToken();
+    if (!token) return;
+    let vigente = true;
+    getMe(token)
+      .then((user) => {
+        if (vigente) startSession({ token, user });
+      })
+      .catch((err) => {
+        // Solo un 401/403 invalida el token; sin red se conserva para el siguiente intento.
+        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) borrarSesion();
+      })
+      .finally(() => {
+        if (vigente) setRestoring(false);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [startSession]);
+
+  if (restoring) {
+    return (
+      <SafeAreaProvider>
+        <SafeAreaView style={[styles.container, styles.restoring]} edges={['top', 'left', 'right']}>
+          <StatusBar style="light" />
+          <ActivityIndicator size="large" color={THEME.colors.accent} accessibilityLabel="Recuperando tu sesión" />
+          <Text style={styles.restoringText}>Recuperando tu sesión…</Text>
+        </SafeAreaView>
+      </SafeAreaProvider>
+    );
+  }
 
   return (
     <SafeAreaProvider>
@@ -132,6 +182,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.primaryDark,
+  },
+  restoring: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  restoringText: {
+    color: THEME.colors.textInverse,
+    fontSize: 15,
+    fontWeight: '600',
   },
   navBar: {
     flexDirection: 'row',

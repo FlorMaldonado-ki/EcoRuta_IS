@@ -36,6 +36,13 @@ export const setAuthToken = (token: string | null) => {
   authToken = token;
 };
 
+/** Se llama cuando la API rechaza el token de la sesión (vencido o inválido). */
+let onUnauthorized: (() => void) | null = null;
+export const setUnauthorizedHandler = (fn: (() => void) | null) => {
+  onUnauthorized = fn;
+};
+const CODIGOS_SESION_INVALIDA = ['SESION_EXPIRADA', 'TOKEN_INVALIDO', 'NO_AUTENTICADO'];
+
 const errorTiempo = () =>
   new ApiError(0, 'TIEMPO_AGOTADO', 'El servidor tardó demasiado en responder. Intenta de nuevo (puede estar despertando).');
 const errorConexion = () =>
@@ -105,6 +112,10 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
 
   if (!res.ok) {
     const body = (data ?? {}) as Partial<ApiErrorBody>;
+    // Token de la sesión ya no válido (p. ej. venció mientras la página estaba abierta): cerrar sesión.
+    if (res.status === 401 && token && token === authToken && CODIGOS_SESION_INVALIDA.includes(body.error ?? '')) {
+      onUnauthorized?.();
+    }
     throw new ApiError(
       res.status,
       body.error ?? `HTTP_${res.status}`,

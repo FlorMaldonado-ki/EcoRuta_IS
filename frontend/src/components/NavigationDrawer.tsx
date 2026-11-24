@@ -25,7 +25,11 @@ export type AppNavScreen =
   | 'driver_requests'
   | 'my_trips'
   | 'driver_profile_vehicle'
-  | 'notifications';
+  | 'notifications'
+  | 'my_ratings'
+  | 'my_documents'
+  | 'emergency_contact'
+  | 'admin';
 
 interface NavigationDrawerProps {
   visible: boolean;
@@ -303,6 +307,31 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
 
             <Text style={styles.sectionHeader}>Cuenta y Alertas</Text>
 
+            {([
+              { key: 'my_ratings', icon: 'star-outline', label: 'Mis Calificaciones' },
+              { key: 'my_documents', icon: 'file-document-outline', label: 'Mis Documentos' },
+              { key: 'emergency_contact', icon: 'account-heart-outline', label: 'Contacto de Emergencia' },
+            ] as const).map((item) => (
+              <TouchableOpacity
+                key={item.key}
+                style={[styles.menuItem, currentScreen === item.key && styles.menuItemActive]}
+                onPress={() => handleItemPress(item.key)}
+                activeOpacity={0.8}
+              >
+                <MaterialCommunityIcons
+                  name={item.icon}
+                  size={22}
+                  color={currentScreen === item.key ? THEME.colors.primary : THEME.colors.textSecondary}
+                />
+                <Text style={[styles.menuItemText, currentScreen === item.key && styles.menuItemTextActive]}>
+                  {item.label}
+                </Text>
+                {item.key === 'my_documents' ? (
+                  <SectionBadge count={badges.documents.count} critical={badges.documents.critical} variant="inline" />
+                ) : null}
+              </TouchableOpacity>
+            ))}
+
             <TouchableOpacity
               style={[
                 styles.menuItem,
@@ -334,6 +363,27 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                 variant="inline"
               />
             </TouchableOpacity>
+
+            {/* Solo para cuentas con rol de administrador (la API vuelve a validarlo en cada petición). */}
+            {currentUser.role === 'admin' ? (
+              <>
+                <Text style={styles.sectionHeader}>Administración</Text>
+                <TouchableOpacity
+                  style={[styles.menuItem, currentScreen === 'admin' && styles.menuItemActive]}
+                  onPress={() => handleItemPress('admin')}
+                  activeOpacity={0.8}
+                >
+                  <MaterialCommunityIcons
+                    name="shield-account-outline"
+                    size={22}
+                    color={currentScreen === 'admin' ? THEME.colors.primary : THEME.colors.textSecondary}
+                  />
+                  <Text style={[styles.menuItemText, currentScreen === 'admin' && styles.menuItemTextActive]}>
+                    Panel de Administración
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
 
             <TouchableOpacity
               style={styles.logoutItem}

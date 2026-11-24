@@ -9,12 +9,13 @@ import type { NotificationType } from '../types/api';
 type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
 
 /** Secciones del panel que muestran insignia. */
-export type NotifSection = 'search' | 'myTrips' | 'requests';
+export type NotifSection = 'search' | 'myTrips' | 'requests' | 'documents';
 
 export const SECTION_LABEL: Record<NotifSection, string> = {
   search: 'Buscar viajes',
   myTrips: 'Mis viajes',
   requests: 'Solicitudes',
+  documents: 'Mis documentos',
 };
 
 /** Tipos de aviso que se dan por vistos al abrir cada sección. */
@@ -24,6 +25,7 @@ export const SECTION_TYPES: Record<Exclude<NotifSection, 'search'>, Notification
     'viaje_lleno', 'lugar_liberado',
   ],
   requests: ['solicitud_recibida'],
+  documents: ['documento_aprobado', 'documento_rechazado'],
 };
 
 export interface NotificationMeta {
@@ -66,6 +68,14 @@ export const NOTIFICATION_META: Record<NotificationType, NotificationMeta> = {
   lugar_liberado: {
     icon: 'seat-passenger', color: THEME.colors.success, tint: THEME.colors.successBg,
     label: 'Lugar liberado', section: 'myTrips',
+  },
+  documento_aprobado: {
+    icon: 'file-check', color: THEME.colors.success, tint: THEME.colors.successBg,
+    label: 'Documento aceptado', section: 'documents',
+  },
+  documento_rechazado: {
+    icon: 'file-alert', color: THEME.colors.error, tint: THEME.colors.errorBg,
+    label: 'Documento rechazado', section: 'documents',
   },
 };
 
