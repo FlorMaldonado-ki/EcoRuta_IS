@@ -32,10 +32,12 @@ async function viajesUsuario(db, usuarioId, { limite, pagina }) {
   const { rows } = await db.query(
     `SELECT cu.viaje_id, cu.participacion, cu.co2_kg, cu.km_evitados,
             i.calculado_en, i.pasajeros, i.distancia_km, i.factor_emision,
-            v.sentido, v.origen_texto, v.destino_texto, v.salida_en, v.finalizado_en
+            v.sentido, v.origen_texto, v.destino_texto, v.salida_en, v.finalizado_en,
+            v.conductor_id, c.nombre_completo AS conductor_nombre, c.foto_storage_key AS conductor_foto
        FROM v_co2_usuario cu
        JOIN impacto_viaje i ON i.viaje_id = cu.viaje_id
        JOIN viaje v         ON v.id = cu.viaje_id
+       JOIN usuario c       ON c.id = v.conductor_id
       WHERE cu.usuario_id = $1
       ORDER BY i.calculado_en DESC, cu.viaje_id
       LIMIT $2 OFFSET $3`,

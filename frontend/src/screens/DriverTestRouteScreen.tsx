@@ -42,10 +42,8 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
   const [editingPointId, setEditingPointId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Estado de éxito al guardar
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  // Manejar toque en el mapa
   const handleMapClick = (coords: { lat: number; lng: number }) => {
     setSelectedCoords(coords);
     setEditingPointId(null);
@@ -55,7 +53,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
     setModalVisible(true);
   };
 
-  // Abrir modal en modo edición
   const handleEditPoint = (mp: MeetingPoint) => {
     setSelectedCoords({ lat: mp.lat, lng: mp.lng });
     setEditingPointId(mp.id);
@@ -65,7 +62,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
     setModalVisible(true);
   };
 
-  // Guardar punto desde el modal
   const handleSaveModalPoint = () => {
     if (!pointName.trim()) {
       setFormError('Por favor ingresa un nombre para el punto de encuentro.');
@@ -78,7 +74,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
     }
 
     if (editingPointId) {
-      // Modo edición
       setMeetingPoints((prev) =>
         prev.map((p) =>
           p.id === editingPointId
@@ -93,7 +88,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
         )
       );
     } else {
-      // Modo creación nuevo
       const newPoint: MeetingPoint = {
         id: `mp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         name: pointName.trim(),
@@ -108,7 +102,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
     setModalVisible(false);
   };
 
-  // Eliminar punto
   const handleDeletePoint = (id: string) => {
     setMeetingPoints((prev) => {
       const filtered = prev.filter((p) => p.id !== id);
@@ -117,7 +110,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
     });
   };
 
-  // Subir punto de orden
   const handleMoveUp = (index: number) => {
     if (index === 0) return;
     setMeetingPoints((prev) => {
@@ -129,7 +121,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
     });
   };
 
-  // Bajar punto de orden
   const handleMoveDown = (index: number) => {
     if (index === meetingPoints.length - 1) return;
     setMeetingPoints((prev) => {
@@ -141,7 +132,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
     });
   };
 
-  // Guardar configuración final de la ruta (Sin validaciones administrativas ni exámenes)
   const handleSaveRoute = () => {
     updateRouteMeetingPoints(meetingPoints);
     setShowSuccessModal(true);
@@ -152,7 +142,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
       <Header subtitle="Ruta de Prueba · Puntos de Encuentro" />
 
       <View style={styles.body}>
-        {/* Barra superior */}
         <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.8}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={THEME.colors.primary} />
           <Text style={styles.backBtnText}>Volver a Configuración</Text>
@@ -183,7 +172,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
           </View>
         </View>
 
-        {/* Instrucción directa */}
         <View style={styles.instructionBanner}>
           <MaterialCommunityIcons name="gesture-tap" size={22} color={THEME.colors.primary} />
           <Text style={styles.instructionText}>
@@ -233,12 +221,10 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
           ) : (
             meetingPoints.map((mp, index) => (
               <View key={mp.id} style={styles.pointItem}>
-                {/* Número de parada */}
                 <View style={styles.badgeCircle}>
                   <Text style={styles.badgeNumber}>{mp.order || index + 1}</Text>
                 </View>
 
-                {/* Datos del punto */}
                 <View style={styles.pointInfo}>
                   <Text style={styles.pointName}>{mp.name}</Text>
                   {mp.description ? (
@@ -305,7 +291,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
           )}
         </View>
 
-        {/* Botón de Guardar Ruta (Sin validaciones administrativas ni exámenes externos) */}
         <TouchableOpacity
           style={styles.saveBtn}
           onPress={handleSaveRoute}
@@ -377,7 +362,6 @@ export const DriverTestRouteScreen: React.FC<DriverTestRouteScreenProps> = ({
         </View>
       </Modal>
 
-      {/* Modal de Éxito al configurar la ruta */}
       <Modal visible={showSuccessModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>

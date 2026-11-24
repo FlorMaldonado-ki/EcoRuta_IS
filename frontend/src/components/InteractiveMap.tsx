@@ -137,19 +137,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
           const bounds = L.latLngBounds();
 
-          // Marcador de origen
           const mOrigin = L.marker([origin.lat, origin.lng], { icon: iconOrigin })
             .addTo(map)
             .bindPopup('<h4>Origen</h4>' + origin.text);
           bounds.extend([origin.lat, origin.lng]);
 
-          // Marcador de destino
           const mDest = L.marker([dest.lat, dest.lng], { icon: iconDest })
             .addTo(map)
             .bindPopup('<h4>Destino</h4>' + dest.text);
           bounds.extend([dest.lat, dest.lng]);
 
-          // Marcadores de puntos de encuentro
           meetingPoints.forEach((mp, index) => {
             const num = mp.order || (index + 1);
             const isSelected = selectedId && mp.id === selectedId;
@@ -180,7 +177,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             bounds.extend([joinPoint.lat, joinPoint.lng]);
           }
 
-          // Trazar ruta con OSRM y fallback a línea recta (RN-10 / RNF-29)
+          // Trazar ruta con OSRM y fallback a línea recta
           const osrmUrl = 'https://router.project-osrm.org/route/v1/driving/' + origin.lng + ',' + origin.lat + ';' + dest.lng + ',' + dest.lat + '?overview=full&geometries=geojson';
 
           fetch(osrmUrl)

@@ -11,10 +11,16 @@ const { str, entero } = require('../../shared/validacion');
 const normalizarPlacas = (v) => str(v).toUpperCase().replace(/[\s.\-]/g, '');
 
 const TEXTOS = [
-  ['brand', 'marca', 50, 'Escribe la marca del vehículo.'],
-  ['model', 'modelo', 50, 'Escribe el modelo del vehículo.'],
-  ['color', 'color', 30, 'Escribe el color del vehículo.'],
+  ['brand', 'marca', 50, 'Selecciona la marca del vehículo.'],
+  ['model', 'modelo', 50, 'Selecciona el modelo del vehículo.'],
+  ['color', 'color', 30, 'Selecciona el color del vehículo.'],
 ];
+
+/** Tipos del catálogo (clave en BD → etiqueta para el cliente). */
+const TIPOS_VEHICULO = { automovil: 'Automóvil', suv: 'SUV / Minivan', pickup: 'Pickup' };
+
+/** Campos que identifican el vehículo en el catálogo: se envían y validan juntos. */
+const CAMPOS_CATALOGO = ['type', 'brand', 'model', 'year'];
 
 /**
  * Valida el cuerpo de POST (parcial = false) o PATCH (parcial = true).
@@ -32,6 +38,24 @@ function parseVehiculo(body, { parcial = false } = {}) {
     if (!v) errors[campo] = msg;
     else if (v.length > max) errors[campo] = `Máximo ${max} caracteres.`;
     else cols[columna] = v;
+  }
+
+  if (presente('type')) {
+    if (!Object.hasOwn(TIPOS_VEHICULO, body.type)) errors.type = 'Selecciona el tipo de vehículo.';
+    else cols.tipo = body.type;
+  }
+
+  if (presente('year')) {
+    const anio = entero(body.year);
+    if (anio === null || anio < 1980 || anio > new Date().getFullYear() + 1) errors.year = 'Selecciona el año del vehículo.';
+    else cols.anio = anio;
+  }
+
+  // En una edición, cambiar cualquiera de estos obliga a mandar los cuatro para validar la combinación.
+  if (parcial && CAMPOS_CATALOGO.some((k) => body[k] !== undefined)) {
+    for (const k of CAMPOS_CATALOGO) {
+      if (body[k] === undefined && !errors[k]) errors[k] = 'Envía tipo, marca, modelo y año juntos.';
+    }
   }
 
   if (presente('plates')) {
@@ -62,8 +86,10 @@ function parseVehiculo(body, { parcial = false } = {}) {
 function toVehiculoDTO(row) {
   return {
     id: row.id,
+    type: row.tipo ?? null,
     brand: row.marca,
     model: row.modelo,
+    year: row.anio ?? null,
     color: row.color,
     plates: row.placas,
     capacity: row.capacidad,
@@ -74,4 +100,4 @@ function toVehiculoDTO(row) {
   };
 }
 
-module.exports = { parseVehiculo, toVehiculoDTO, normalizarPlacas };
+module.exports = { parseVehiculo, toVehiculoDTO, normalizarPlacas, TIPOS_VEHICULO };

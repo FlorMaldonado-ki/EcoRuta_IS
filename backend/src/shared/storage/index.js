@@ -25,9 +25,31 @@ const local = {
   async eliminar(key) {
     await fs.rm(path.join(UPLOADS_DIR, key), { force: true });
   },
+  async leer(key) {
+    const destino = path.resolve(UPLOADS_DIR, key);
+    if (!destino.startsWith(UPLOADS_DIR + path.sep)) return null;
+    try {
+      return await fs.readFile(destino);
+    } catch {
+      return null;
+    }
+  },
 };
 
 const cloudinary = {
+  /** URL firmada de entrega para un recurso "authenticated" (s--firma--). */
+  urlEntrega(key) {
+    const { cloudName, apiSecret } = env.storage.cloudinary;
+    const [tipoRecurso, ...resto] = key.split('/');
+    const publicId = resto.join('/');
+    const firma = crypto.createHash('sha1').update(publicId + apiSecret).digest('base64')
+      .replace(/\+/g, '-').replace(/\//g, '_').slice(0, 8);
+    return `https://res.cloudinary.com/${cloudName}/${tipoRecurso}/authenticated/s--${firma}--/${publicId}`;
+  },
+  async leer(key) {
+    const res = await fetch(this.urlEntrega(key));
+    return res.ok ? Buffer.from(await res.arrayBuffer()) : null;
+  },
   firma(params) {
     const base = Object.keys(params).sort().map((k) => `${k}=${params[k]}`).join('&');
     return crypto.createHash('sha1').update(base + env.storage.cloudinary.apiSecret).digest('hex');
@@ -94,4 +116,6 @@ module.exports = {
   /** @returns {Promise<string>} storage_key */
   guardar: (buffer, opciones) => driver.guardar(buffer, opciones),
   eliminar: (key) => driver.eliminar(key).catch((err) => console.error('[storage] no se pudo eliminar', key, err.message)),
+  /** @returns {Promise<Buffer|null>} contenido del archivo o null si no existe */
+  leer: (key) => driver.leer(key),
 };

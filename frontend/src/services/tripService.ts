@@ -1,5 +1,5 @@
 /**
- * EcoRuta Escolar · Viajes y reservas contra la API real (Sprint 2).
+ * Viajes y reservas contra la API.
  * Guía de endpoints: docs/API-SPRINT2.md · tipos de la API: types/apiBackend.ts.
  *
  * Las pantallas usan los tipos de types/api.ts; aquí se adaptan las respuestas
@@ -62,7 +62,7 @@ export function toTrip(t: ApiTripDTO, fallbackDriver?: DriverFallback): TripDTO 
           fullName: t.driver.fullName,
           affiliation: t.driver.affiliation,
           phone: t.driver.phone ?? null,
-          photoUrl: null,
+          photoUrl: t.driver.photoUrl ?? null,
         }
       : fallbackDriver ?? { id: '', fullName: 'Conductor', affiliation: null, photoUrl: null },
     vehicle: t.vehicle
@@ -96,7 +96,7 @@ export function errorMessage(err: unknown): string {
   return 'Ocurrió un error inesperado. Intenta de nuevo.';
 }
 
-// ── Búsqueda (RF-11) ────────────────────────────────────────────────────────
+// ── Búsqueda ────────────────────────────────────────────────────────────────
 
 /** Fecha local del dispositivo como AAAA-MM-DD (la API usa hora de Morelia). */
 export function localYmd(d: Date): string {
@@ -163,7 +163,7 @@ export async function searchTrips(f: TripSearchFilters): Promise<TripDTO[]> {
   });
 }
 
-// ── Detalle, publicar y cancelar (RF-08, RF-12, RF-13) ──────────────────────
+// ── Detalle, publicar y cancelar ────────────────────────────────────────────
 
 export async function getTripById(id: string, currentUser?: UserDTO): Promise<TripDTO> {
   const t = await apiRequest<ApiTripDTO>(`/api/viajes/${id}`);
@@ -185,7 +185,7 @@ export async function cancelTripByDriver(tripId: string): Promise<{ message: str
   };
 }
 
-/** RF-13 · PATCH /api/viajes/:id con solo los campos que cambian (409 VIAJE_CON_RESERVAS si ya hay aceptados). */
+/** PATCH /api/viajes/:id con solo los campos que cambian (409 VIAJE_CON_RESERVAS si ya hay aceptados). */
 export async function updateTrip(tripId: string, changes: ApiUpdateTripRequest, currentUser: UserDTO): Promise<TripDTO> {
   const t = await apiRequest<ApiTripDTO>(`/api/viajes/${tripId}`, { method: 'PATCH', body: changes });
   return toTrip(t, driverFromUser(currentUser));
@@ -193,25 +193,25 @@ export async function updateTrip(tripId: string, changes: ApiUpdateTripRequest, 
 
 export interface FinishTripResult {
   trip: TripDTO;
-  /** null si el viaje no tuvo pasajeros aceptados (RN-07) */
+  /** null si el viaje no tuvo pasajeros aceptados */
   impact: ApiFinishTripResponse['impact'];
 }
 
-/** RF-19 · POST /api/viajes/:id/finalizar: el viaje pasa a finalizado y se registra el CO₂ (RF-21). */
+/** POST /api/viajes/:id/finalizar: el viaje pasa a finalizado y se registra el CO₂. */
 export async function finishTrip(tripId: string, currentUser: UserDTO): Promise<FinishTripResult> {
   const res = await apiRequest<ApiFinishTripResponse>(`/api/viajes/${tripId}/finalizar`, { method: 'POST' });
   return { trip: toTrip(res.trip, driverFromUser(currentUser)), impact: res.impact };
 }
 
-/** ¿Ya se puede finalizar? Solo el conductor, viaje vigente y después de la hora de salida (RF-19). */
+/** ¿Ya se puede finalizar? Solo el conductor, viaje vigente y después de la hora de salida. */
 export const canFinishTrip = (trip: Pick<TripDTO, 'status' | 'departureAt'>, now = Date.now()) =>
   (trip.status === 'published' || trip.status === 'in_progress') && new Date(trip.departureAt).getTime() <= now;
 
-/** ¿Se puede editar? Publicado, aún no sale y sin pasajeros aceptados (RF-13). */
+/** ¿Se puede editar? Publicado, aún no sale y sin pasajeros aceptados. */
 export const canEditTrip = (trip: Pick<TripDTO, 'status' | 'departureAt' | 'acceptedPassengers'>, now = Date.now()) =>
   trip.status === 'published' && new Date(trip.departureAt).getTime() > now && (trip.acceptedPassengers ?? 0) === 0;
 
-// ── Reservas (RF-15 a RF-17) ────────────────────────────────────────────────
+// ── Reservas ────────────────────────────────────────────────────────────────
 
 /** Solicitar lugar indicando dónde se unirá (punto del conductor o propuesto). */
 export async function requestSeat(tripId: string, meetingPoint?: ApiJoinPointRequest): Promise<ApiReservationDTO> {
@@ -240,7 +240,7 @@ export const acceptReservationRequest = (reservationId: string) =>
 export const rejectReservationRequest = (reservationId: string) =>
   apiRequest<ApiReservationDTO>(`/api/reservas/${reservationId}`, { method: 'PATCH', body: { action: 'reject' } });
 
-// ── Mis viajes (RF-18) ──────────────────────────────────────────────────────
+// ── Mis viajes ──────────────────────────────────────────────────────────────
 
 export type TripBucket = ApiMyTripsStatus; // 'upcoming' | 'in_progress' | 'history'
 

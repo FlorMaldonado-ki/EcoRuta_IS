@@ -7,6 +7,7 @@
  *   PATCH  /api/vehiculos/:id        editar     → VehicleDTO
  *   DELETE /api/vehiculos/:id        desactivar → VehicleDTO (active: false); no borra
  *   GET    /api/me/vehiculos         mis vehículos activos (?includeInactive=true para todos)
+ *   GET    /api/catalogos/vehiculos  catálogo tipo → marca → modelo → años (público)
  */
 const { Router } = require('express');
 const { requireAuth } = require('../../middlewares/auth');
@@ -34,4 +35,10 @@ misVehiculos.get('/', h(async (req, res) => {
   res.json(await service.listar(req.user.id, { incluirInactivos: req.query.includeInactive === 'true' }));
 }));
 
-module.exports = { vehiculos, misVehiculos };
+const catalogoVehiculos = Router();
+catalogoVehiculos.get('/', h(async (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=600');
+  res.json(await service.catalogoDTO());
+}));
+
+module.exports = { vehiculos, misVehiculos, catalogoVehiculos };

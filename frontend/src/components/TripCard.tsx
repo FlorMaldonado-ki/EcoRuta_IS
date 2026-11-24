@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../constants/theme';
 import type { TripDTO } from '../types/api';
 import { formatTripEstimate } from '../utils/tripEstimate';
+import { DriverAvatar } from './DriverAvatar';
 
 interface TripCardProps {
   trip: TripDTO;
@@ -11,7 +12,6 @@ interface TripCardProps {
 }
 
 export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
-  // Formatear hora de salida
   const depDate = new Date(trip.departureAt);
   const timeFormatted = depDate.toLocaleTimeString('es-MX', {
     hour: '2-digit',
@@ -24,21 +24,10 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
     ? 'Hoy'
     : depDate.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' });
 
-  // Iniciales del conductor en caso de no tener foto
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .slice(0, 2)
-      .join('')
-      .toUpperCase();
-  };
-
   const isFull = trip.seatsAvailable <= 0;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
-      {/* Barra superior con hora y estado de lugares */}
+    <View style={styles.card}>
       <View style={styles.topRow}>
         <View style={styles.timeTag}>
           <MaterialCommunityIcons name="clock-outline" size={15} color={THEME.colors.primary} />
@@ -57,9 +46,7 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
         </View>
       </View>
 
-      {/* Recorrido Origen → Destino */}
       <View style={styles.routeContainer}>
-        {/* Marcador gráfico vertical */}
         <View style={styles.routeIndicator}>
           <View style={styles.originDot} />
           <View style={styles.routeLine} />
@@ -67,7 +54,6 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
         </View>
 
         <View style={styles.routeDetails}>
-          {/* Origen */}
           <View style={styles.placeItem}>
             <Text style={styles.placeLabel}>Origen</Text>
             <Text style={styles.placeText} numberOfLines={1}>
@@ -75,7 +61,6 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
             </Text>
           </View>
 
-          {/* Destino */}
           <View style={styles.placeItem}>
             <Text style={styles.placeLabel}>Destino</Text>
             <Text style={[styles.placeText, styles.destText]} numberOfLines={1}>
@@ -85,7 +70,6 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
         </View>
       </View>
 
-      {/* Distancia y duración estimadas (RF-10) */}
       <View style={styles.estimateRow}>
         <MaterialCommunityIcons name="map-marker-path" size={13} color={THEME.colors.textSecondary} />
         <Text style={styles.estimateText}>
@@ -94,19 +78,12 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
         </Text>
       </View>
 
-      {/* Separador */}
       <View style={styles.divider} />
 
-      {/* Información del Conductor y Vehículo (Con estricta privacidad RNF-12) */}
+      {/* Las placas no se muestran aquí: solo con reserva aceptada. */}
       <View style={styles.footerRow}>
         <View style={styles.driverInfo}>
-          {trip.driver.photoUrl ? (
-            <Image source={{ uri: trip.driver.photoUrl }} style={styles.avatarImg} />
-          ) : (
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarInitials}>{getInitials(trip.driver.fullName)}</Text>
-            </View>
-          )}
+          <DriverAvatar fullName={trip.driver.fullName} photoUrl={trip.driver.photoUrl} size={36} />
 
           <View style={styles.driverTextColumn}>
             <View style={styles.driverNameRow}>
@@ -116,7 +93,6 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
               <MaterialCommunityIcons name="shield-check" size={14} color={THEME.colors.primary} />
             </View>
 
-            {/* Vehículo: Modelo y Color (Placas protegidas) */}
             <View style={styles.vehicleRow}>
               <MaterialCommunityIcons name="car-side" size={13} color={THEME.colors.textSecondary} />
               <Text style={styles.vehicleText} numberOfLines={1}>
@@ -126,7 +102,6 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
           </View>
         </View>
 
-        {/* Badge de estado de solicitud si el usuario ya participó */}
         {trip.userReservationStatus && trip.userReservationStatus !== 'none' && (
           <View
             style={[
@@ -158,14 +133,25 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onPress }) => {
         )}
       </View>
 
-      {/* Proximidad estimada si existe */}
       {trip.distanceFromYouKm !== undefined && (
         <View style={styles.proximityRow}>
           <MaterialCommunityIcons name="map-marker-distance" size={12} color={THEME.colors.accentDark} />
           <Text style={styles.proximityText}>A {trip.distanceFromYouKm} km de tu búsqueda</Text>
         </View>
       )}
-    </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.detailsBtn}
+        onPress={onPress}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={`Ver detalles del viaje de ${trip.driver.fullName}, ${dateFormatted} a las ${timeFormatted}`}
+      >
+        <MaterialCommunityIcons name="text-box-search-outline" size={18} color={THEME.colors.textInverse} />
+        <Text style={styles.detailsBtnText}>Ver detalles</Text>
+        <MaterialCommunityIcons name="chevron-right" size={18} color={THEME.colors.textInverse} />
+      </TouchableOpacity>
+    </View>
   );
 };
 
@@ -296,28 +282,6 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
   },
-  avatarImg: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: THEME.colors.accent,
-  },
-  avatarCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: THEME.colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: THEME.colors.accent,
-  },
-  avatarInitials: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
   driverTextColumn: {
     flex: 1,
   },
@@ -391,6 +355,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: THEME.colors.accentDark,
     fontWeight: '600',
+  },
+  detailsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 12,
+    minHeight: 44,
+    borderRadius: THEME.borderRadius.md,
+    backgroundColor: THEME.colors.primary,
+  },
+  detailsBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.colors.textInverse,
   },
 });
 

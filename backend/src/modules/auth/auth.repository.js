@@ -8,7 +8,7 @@
 
 const COLUMNAS_USUARIO = `u.id, u.institucion_id, u.nombre_completo, u.correo, u.hash_contrasena, u.tipo,
   u.carrera, u.departamento, u.telefono, u.rol, u.estado, u.verificado_en,
-  u.intentos_fallidos, u.bloqueado_hasta, u.creado_en`;
+  u.intentos_fallidos, u.bloqueado_hasta, u.creado_en, u.foto_storage_key`;
 
 const CON_CALIFICACION = `${COLUMNAS_USUARIO},
   (SELECT round(avg(c.puntaje)::numeric, 2) FROM calificacion c WHERE c.evaluado_id = u.id) AS calificacion_promedio,
@@ -124,7 +124,25 @@ async function actualizarPerfil(db, usuarioId, cambios) {
   await db.query(`UPDATE usuario SET ${sets} WHERE id = $1`, [usuarioId, ...columnas.map((c) => cambios[c])]);
 }
 
+/** Reemplaza la foto y devuelve la clave anterior (para borrarla del storage). */
+async function actualizarFoto(db, usuarioId, key) {
+  const { rows } = await db.query(
+    `UPDATE usuario u SET foto_storage_key = $2
+       FROM (SELECT foto_storage_key FROM usuario WHERE id = $1 FOR UPDATE) anterior
+      WHERE u.id = $1
+  RETURNING anterior.foto_storage_key AS anterior`,
+    [usuarioId, key],
+  );
+  return rows[0]?.anterior ?? null;
+}
+
+async function claveFoto(db, usuarioId) {
+  const { rows } = await db.query('SELECT foto_storage_key FROM usuario WHERE id = $1', [usuarioId]);
+  return rows[0]?.foto_storage_key ?? null;
+}
+
 module.exports = {
+  actualizarFoto, claveFoto,
   buscarPorCorreo, buscarPorId, existeCorreo, insertarUsuario, insertarDocumento,
   crearToken, estadoToken, consumirToken, activarCuenta,
   registrarIntentoFallido, registrarInicioExitoso, actualizarContrasena, actualizarPerfil,

@@ -42,7 +42,6 @@ export const ColorPickerModal: React.FC<ColorPickerModalProps> = ({
           </View>
 
           <ScrollView contentContainerStyle={styles.content}>
-            {/* Muestra visual del color seleccionado */}
             <View style={styles.previewBox}>
               <View style={[styles.previewColor, { backgroundColor: selectedHex }]} />
               <View>

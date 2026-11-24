@@ -17,10 +17,10 @@ export interface RegistrationFormData {
   password: string;
   confirmPassword: string;
   termsAccepted: boolean;
-  // Specific to Alumno
+  // Solo alumno
   career: string;
   academicCurriculumDoc: AttachedFile | null; // Retícula académica vigente
-  // Specific to Maestro
+  // Solo maestro
   department: string;
   scheduleDoc: AttachedFile | null; // Carga de materias u horario
 }

@@ -67,17 +67,18 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
   const isAlumno = user.userType === 'alumno';
   const { community, communityStatus, communityError, mine, refresh: refreshImpact } = useImpact();
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>('home');
-  // Viaje que se está editando (RF-13) y a dónde regresar al terminar
+  // Viaje que se está editando y a dónde regresar al terminar
   const [editingTrip, setEditingTrip] = useState<TripDTO | null>(null);
   const [editReturnTo, setEditReturnTo] = useState<ActiveScreen>('my_trips');
   const [selectedTrip, setSelectedTrip] = useState<TripDTO | null>(null);
   // Pantalla a la que regresa el detalle del viaje (búsqueda o mis viajes)
   const [detailReturnTo, setDetailReturnTo] = useState<ActiveScreen>('passenger_search');
   const [currentRoute, setCurrentRoute] = useState<DriverRoute | null>(null);
+  const [routeReturnTo, setRouteReturnTo] = useState<ActiveScreen>('home');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { unread: unreadCount, openCenter, badges, markSectionSeen, registerNavigator } = useNotifications();
 
-  // SCRUM-67: al volver al inicio se refresca el total (la primera carga la hace ImpactProvider).
+  // Al volver al inicio se refresca el total (la primera carga la hace ImpactProvider).
   const firstHome = useRef(true);
   useEffect(() => {
     if (activeScreen !== 'home') return;
@@ -111,7 +112,6 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
       setDrawerOpen(false);
       return;
     }
-    // map drawer keys to internal screens
     const map: Partial<Record<AppNavScreen, ActiveScreen>> = {
       home: 'home',
       my_impact: 'my_impact',
@@ -133,7 +133,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
     setSelectedTrip(null);
   };
 
-  // ── Pantallas del Sprint 2 ─────────────────────────────────────────────
+  // ── Subpantallas ────────────────────────────────────────────────
   if (activeScreen === 'passenger_search') {
     return (
       <PassengerSearchScreen
@@ -165,7 +165,10 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
       <DriverProfileVehicleScreen
         currentUser={user}
         onBack={goHome}
-        onSuccessNavigateToRoute={() => navigate('driver_route_setup')}
+        onGoToRouteSetup={() => {
+          setRouteReturnTo('driver_profile_vehicle');
+          navigate('driver_route_setup');
+        }}
       />
     );
   }
@@ -174,7 +177,11 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
     return (
       <DriverRouteSetupScreen
         currentUser={user}
-        onBack={() => navigate('driver_profile_vehicle')}
+        onBack={() => {
+          const target = routeReturnTo;
+          setRouteReturnTo('home');
+          navigate(target);
+        }}
         onContinueToTestRoute={(route) => {
           setCurrentRoute(route);
           navigate('driver_test_route');
@@ -206,7 +213,10 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
         currentUser={user}
         onBack={() => navigate('driver_test_route')}
         onGoToVehicleSetup={() => navigate('driver_profile_vehicle')}
-        onGoToRouteSetup={() => navigate('driver_route_setup')}
+        onGoToRouteSetup={() => {
+          setRouteReturnTo('driver_profile_vehicle');
+          navigate('driver_route_setup');
+        }}
         onSuccessPublished={() => navigate('my_trips')}
       />
     );
@@ -219,7 +229,10 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
         editingTrip={editingTrip}
         onBack={() => navigate(editReturnTo)}
         onGoToVehicleSetup={() => navigate('driver_profile_vehicle')}
-        onGoToRouteSetup={() => navigate('driver_route_setup')}
+        onGoToRouteSetup={() => {
+          setRouteReturnTo('driver_profile_vehicle');
+          navigate('driver_route_setup');
+        }}
         onSuccessPublished={() => navigate('my_trips')}
         onSuccessEdited={(updated) => {
           setEditingTrip(null);
@@ -266,7 +279,7 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
     );
   }
 
-  // ── Dashboard principal ────────────────────────────────────────────────
+  // ── Dashboard principal ───────────────────────────────────────────────────
   return (
     <>
       <NavigationDrawer
@@ -291,7 +304,6 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
         />
 
         <View style={styles.body}>
-          {/* Banner de Bienvenida */}
           <View style={styles.welcomeCard}>
             <View style={styles.avatarCircle}>
               <MaterialCommunityIcons
@@ -313,13 +325,11 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
             </View>
           </View>
 
-          {/* Impacto ecológico comunitario */}
           <View style={styles.impactCard}>
             <View style={styles.impactHeader}>
               <MaterialCommunityIcons name="leaf" size={22} color={THEME.colors.accent} />
               <Text style={styles.impactTitle}>Impacto Ecológico Comunitario</Text>
             </View>
-            {/* SCRUM-67 · RF-24: estados de carga, error con reintento y formato con miles */}
             {communityStatus === 'loading' && !community ? (
               <ActivityIndicator style={styles.impactLoader} color={THEME.colors.accent} accessibilityLabel="Cargando impacto" />
             ) : communityStatus === 'error' && !community ? (
@@ -475,7 +485,6 @@ export const AuthenticatedHomeScreen: React.FC<AuthenticatedHomeScreenProps> = (
             </TouchableOpacity>
           </View>
 
-          {/* Cerrar sesión */}
           <TouchableOpacity
             style={styles.logoutBtn}
             onPress={onLogout}

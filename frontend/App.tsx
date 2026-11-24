@@ -40,7 +40,6 @@ export default function App() {
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <StatusBar style="light" />
 
-        {/* Pestañas Registro / Iniciar sesión */}
         {currentScreen !== 'authenticated' && (
           <View style={styles.navBar}>
             <TouchableOpacity
@@ -115,7 +114,7 @@ export default function App() {
           {currentScreen === 'authenticated' && session && (
             // key: al cambiar de usuario se reinicia la bandeja y las alertas
             <NotificationsProvider key={session.user.id}>
-              {/* Impacto compartido (RF-26): se actualiza al finalizar un viaje */}
+              {/* Impacto compartido: se actualiza al finalizar un viaje */}
               <ImpactProvider>
                 <AuthenticatedHomeScreen user={session.user} onLogout={handleLogout} />
                 <NotificationsCenterModal />

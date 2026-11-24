@@ -74,7 +74,6 @@ export const AlertBanner: React.FC = () => {
 
         <View style={styles.body}>
           <View style={styles.row}>
-            {/* Icono en burbuja de color */}
             <View style={styles.iconWrap}>
               {isCritical && (
                 <Animated.View

@@ -1,5 +1,5 @@
 /**
- * SCRUM-68 · RF-26: estado compartido del impacto ecológico.
+ * Estado compartido del impacto ecológico.
  *
  * El inicio (tarjeta comunitaria) y "Mi impacto" leen de aquí. Al finalizar un
  * viaje se llama a `invalidate()` y ambos muestran el valor nuevo sin cerrar la

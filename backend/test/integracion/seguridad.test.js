@@ -69,9 +69,9 @@ test('seguridad de la API', { skip: omitir }, async (t) => {
     assert.equal(busqueda.status, 422);
     const login = await api.pedir('POST', '/api/auth/login', { body: { email: inyeccion, password: inyeccion } });
     assert.ok([401, 422].includes(login.status));
-    const veh = await api.pedir('POST', '/api/vehiculos', { token: a.token, body: { brand: inyeccion, model: "x'); DELETE FROM vehiculo; --", color: 'Gris', plates: 'SQL1234', capacity: 4, licenseAndInsuranceDeclared: true } });
-    assert.equal(veh.status, 201);
-    assert.equal(veh.body.brand, inyeccion); // se guardó como texto literal
+    const veh = await api.pedir('POST', '/api/vehiculos', { token: a.token, body: { type: 'automovil', brand: inyeccion, model: "x'); DELETE FROM vehiculo; --", year: 2020, color: 'Gris', plates: 'SQL1234', capacity: 4, licenseAndInsuranceDeclared: true } });
+    assert.equal(veh.status, 422); // se buscó en el catálogo como texto literal y no existe
+    assert.ok(veh.body.fields.model);
     const { rows } = await pool.query('SELECT count(*) AS n FROM vehiculo WHERE id = $1', [vehB.id]);
     assert.equal(rows[0].n, 1);
     const reservaFalsa = await api.pedir('PATCH', `/api/reservas/${encodeURIComponent("1' OR '1'='1")}`, { token: b.token, body: { action: 'accept' } });

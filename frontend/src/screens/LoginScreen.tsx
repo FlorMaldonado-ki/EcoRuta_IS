@@ -112,7 +112,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
         <View style={styles.contentWrapper}>
           <View style={styles.card}>
-            {/* Título y Bienvenida */}
             <View style={styles.cardHeader}>
               <View style={styles.iconCircle}>
                 <MaterialCommunityIcons name="account-lock-outline" size={32} color={THEME.colors.primary} />
@@ -123,7 +122,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </Text>
             </View>
 
-            {/* Campos de acceso */}
             <InputField
               label="Correo institucional"
               placeholder="ejemplo@morelia.tecnm.mx"
@@ -152,7 +150,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               isPassword
             />
 
-            {/* Enlace Recuperar Contraseña */}
             <TouchableOpacity
               style={styles.forgotBtn}
               onPress={() => setShowForgotModal(true)}
@@ -161,7 +158,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <Text style={styles.forgotBtnText}>¿Olvidaste tu contraseña?</Text>
             </TouchableOpacity>
 
-            {/* Botón Principal de Iniciar Sesión */}
             <TouchableOpacity
               style={[styles.submitButton, isLoading && styles.btnDisabled]}
               onPress={handleLogin}
@@ -183,7 +179,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               )}
             </TouchableOpacity>
 
-            {/* Enlace de navegación hacia Registro */}
             <View style={styles.registerPrompt}>
               <Text style={styles.registerPromptText}>¿Aún no tienes cuenta? </Text>
               <TouchableOpacity onPress={onNavigateToRegister} activeOpacity={0.7}>
@@ -193,7 +188,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </View>
         </View>
 
-        {/* Modal de Recuperación de Contraseña */}
         <ForgotPasswordModal
           visible={showForgotModal}
           onClose={() => setShowForgotModal(false)}

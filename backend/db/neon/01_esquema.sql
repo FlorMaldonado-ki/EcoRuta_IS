@@ -1,6 +1,6 @@
 -- =============================================================================
 -- EcoRuta Escolar · Esquema completo para el SQL Editor de Neon
--- Generado por db/build-neon-bundle.js el 2026-11-13T04:07:03.903Z
+-- Generado por db/build-neon-bundle.js el 2026-11-24T16:26:16.136Z
 -- NO EDITAR A MANO: edita db/migrations/ y vuelve a generar con "npm run db:bundle".
 -- Ejecutar UNA sola vez en una base vacía. Es una transacción: si algo falla, no se aplica nada.
 -- =============================================================================
@@ -1022,6 +1022,47 @@ ALTER TABLE notificacion ADD CONSTRAINT ck_notificacion_tipo CHECK (tipo IN (
 ));
 
 INSERT INTO schema_migrations (nombre, checksum) VALUES ('012_puntos_encuentro_lista_espera.sql', '10d1623ac67d736c199168e6684d51d0fe8a823f47289c7a3aa6fdb45034e9f2');
+
+-- >>>>>>>>>>>>>>>>>>>> 013_catalogo_vehiculos_foto.sql >>>>>>>>>>>>>>>>>>>>
+-- =============================================================================
+-- EcoRuta Escolar · Migración 013 · Catálogo de vehículos y foto del conductor
+-- -----------------------------------------------------------------------------
+-- 1. catalogo_vehiculo: combinaciones válidas tipo + marca + modelo + año.
+--    Se llena con db/catalogos/importar-vpic.js (NHTSA vPIC, migración 014) y,
+--    para modelos exclusivos de México, con filas fuente = 'manual'.
+-- 2. vehiculo.tipo y vehiculo.anio: obligatorios en la API para registros nuevos;
+--    quedan NULL en los vehículos registrados antes de este cambio.
+-- 3. usuario.foto_storage_key: foto del perfil capturada con la cámara. Igual
+--    que los documentos, la BD guarda la clave y el archivo vive en el storage.
+-- =============================================================================
+
+CREATE TABLE catalogo_vehiculo (
+  id      SERIAL      PRIMARY KEY,
+  tipo    VARCHAR(20) NOT NULL,
+  marca   VARCHAR(50) NOT NULL,
+  modelo  VARCHAR(50) NOT NULL,
+  anio    SMALLINT    NOT NULL,
+  fuente  VARCHAR(20) NOT NULL DEFAULT 'manual',
+  activo  BOOLEAN     NOT NULL DEFAULT true,
+  CONSTRAINT ck_catalogo_vehiculo_tipo   CHECK (tipo IN ('automovil', 'suv', 'pickup')),
+  CONSTRAINT ck_catalogo_vehiculo_anio   CHECK (anio BETWEEN 1980 AND 2100),
+  CONSTRAINT ck_catalogo_vehiculo_textos CHECK (btrim(marca) <> '' AND btrim(modelo) <> ''),
+  CONSTRAINT ck_catalogo_vehiculo_fuente CHECK (fuente IN ('nhtsa_vpic', 'manual')),
+  CONSTRAINT uq_catalogo_vehiculo UNIQUE (tipo, marca, modelo, anio)
+);
+
+COMMENT ON TABLE catalogo_vehiculo IS 'Combinaciones válidas de tipo, marca, modelo y año para registrar vehículos.';
+
+ALTER TABLE vehiculo
+  ADD COLUMN tipo VARCHAR(20),
+  ADD COLUMN anio SMALLINT,
+  ADD CONSTRAINT ck_vehiculo_tipo CHECK (tipo IS NULL OR tipo IN ('automovil', 'suv', 'pickup')),
+  ADD CONSTRAINT ck_vehiculo_anio CHECK (anio IS NULL OR anio BETWEEN 1980 AND 2100);
+
+ALTER TABLE usuario ADD COLUMN foto_storage_key VARCHAR(255);
+COMMENT ON COLUMN usuario.foto_storage_key IS 'Foto de perfil (cámara). Se sirve con URL firmada en /api/fotos.';
+
+INSERT INTO schema_migrations (nombre, checksum) VALUES ('013_catalogo_vehiculos_foto.sql', '52e612f88f106b61aaf0619a3cf0271f8ff53744c6b2413d7266562415182f9d');
 
 COMMIT;
 

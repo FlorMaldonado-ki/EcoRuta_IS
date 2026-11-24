@@ -1,5 +1,5 @@
 /**
- * SCRUM-61 · RF-19: finalizar un viaje con confirmación y resumen del CO₂.
+ * Finalizar un viaje con confirmación y resumen del CO₂.
  * Lo usan Mis viajes › Conductor y el detalle del viaje.
  */
 import { useState } from 'react';
@@ -22,7 +22,7 @@ export function useFinishTrip(currentUser: UserDTO, onFinished?: (result: Finish
     setFinishingId(trip.id);
     try {
       const result = await finishTrip(trip.id, currentUser);
-      invalidate(); // RF-26: el inicio y "Mi impacto" ya muestran el valor nuevo
+      invalidate(); // el inicio y "Mi impacto" ya muestran el valor nuevo
       const { impact } = result;
       if (impact) {
         const pasajeros = `${impact.passengers} pasajero${impact.passengers === 1 ? '' : 's'}`;

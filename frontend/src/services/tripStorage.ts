@@ -1,38 +1,17 @@
 /**
- * EcoRuta Escolar · Estado local de la sesión (Sprint 2).
- *
- * Solo guarda en memoria lo que la API todavía no maneja:
+ * Estado local de la sesión: solo lo que la API todavía no maneja.
  *   - ruta habitual del conductor y sus puntos de encuentro
- *   - fotografía del conductor
- *   - copia del vehículo registrado (la fuente real es GET /api/me/vehiculos)
- *
- * Viajes, reservas y notificaciones viven en el backend: ver services/tripService.ts
- * y services/notificationService.ts.
+ *   - vista previa de la foto recién tomada (la definitiva viene en UserDTO.photoUrl)
  * Todo se borra al cerrar sesión con resetLocalState().
  */
-import type { DriverRoute, MeetingPoint, VehicleDTO } from '../types/api';
+import type { DriverRoute, MeetingPoint } from '../types/api';
 
 let currentDriverRoute: DriverRoute | null = null;
-let currentDriverVehicle: VehicleDTO | null = null;
 let currentDriverPhotoUrl: string | null = null;
 
-/** Limpia todo el estado local (al cerrar sesión o cambiar de usuario). */
 export function resetLocalState() {
   currentDriverRoute = null;
-  currentDriverVehicle = null;
   currentDriverPhotoUrl = null;
-}
-
-// ============================================================================
-// RUTA, VEHÍCULO Y FOTO DEL CONDUCTOR
-// ============================================================================
-
-export function saveDriverVehicle(vehicle: VehicleDTO) {
-  currentDriverVehicle = vehicle;
-}
-
-export function getDriverVehicle(): VehicleDTO | null {
-  return currentDriverVehicle;
 }
 
 export function saveDriverPhoto(photoUrl: string) {

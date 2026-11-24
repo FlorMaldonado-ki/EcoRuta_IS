@@ -58,7 +58,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
   // Carreras y departamentos desde la API (tabla parametro), con options.ts como respaldo.
   const { careers, departments } = useCatalogs();
 
-  // Manejo de cambio de tipo de usuario
   const handleUserTypeChange = (type: UserType) => {
     setFormData((prev) => ({
       ...prev,
@@ -84,7 +83,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
     });
   };
 
-  // Validación de contraseña según RNF-06 (mínimo 8 caracteres, letras y números)
+  // Mínimo 8 caracteres, con letras y números.
   const validatePasswordStrength = (pwd: string) => {
     const hasMinLength = pwd.length >= 8;
     const hasLetter = /[a-zA-Z]/.test(pwd);
@@ -97,23 +96,20 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
     };
   };
 
-  // Validación integral del formulario
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
 
-    // 1. Tipo de usuario obligatorio
     if (!formData.userType) {
       newErrors.userType = 'Debes seleccionar obligatoriamente si eres Alumno o Maestro.';
     }
 
-    // 2. Nombre completo
     if (!formData.fullName.trim()) {
       newErrors.fullName = 'El nombre completo es obligatorio.';
     } else if (formData.fullName.trim().length < 4) {
       newErrors.fullName = 'Ingresa tu nombre y apellidos completos.';
     }
 
-    // 3. Correo institucional con dominio @morelia.tecnm.mx (RN-01)
+    // Solo se aceptan correos del dominio institucional.
     const emailNormalized = formData.email.trim().toLowerCase();
     if (!emailNormalized) {
       newErrors.email = 'El correo institucional es obligatorio.';
@@ -123,7 +119,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
       newErrors.email = 'El formato del correo institucional no es válido.';
     }
 
-    // 4. Contraseña y confirmación (RNF-06)
     const pwdStrength = validatePasswordStrength(formData.password);
     if (!formData.password) {
       newErrors.password = 'La contraseña es obligatoria.';
@@ -137,7 +132,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
       newErrors.confirmPassword = 'Las contraseñas no coinciden.';
     }
 
-    // 5. Validaciones dinámicas por tipo de usuario
     if (formData.userType === 'alumno') {
       if (!formData.career.trim()) {
         newErrors.career = 'Debes seleccionar tu carrera.';
@@ -156,7 +150,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
       }
     }
 
-    // 6. Aceptación de términos de uso y aviso de privacidad (RF-07)
     if (!formData.termsAccepted) {
       newErrors.termsAccepted =
         'Debes aceptar los términos de uso y el aviso de privacidad para registrarte.';
@@ -213,7 +206,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
         <Header subtitle="TecNM Campus Morelia" />
 
         <View style={styles.formWrapper}>
-          {/* Card principal del formulario */}
           <View style={styles.mainCard}>
             <View style={styles.formHeader}>
               <Text style={styles.formTitle}>Registro de Usuario</Text>
@@ -222,19 +214,16 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
               </Text>
             </View>
 
-            {/* SELECCIÓN DINÁMICA DE TIPO DE USUARIO */}
             <UserTypeSelector
               selectedType={formData.userType}
               onSelect={handleUserTypeChange}
               error={errors.userType}
             />
 
-            {/* DIVISOR DE SECCIÓN */}
             <View style={styles.sectionDivider}>
               <Text style={styles.sectionDividerText}>Datos de la cuenta</Text>
             </View>
 
-            {/* CAMPOS GENERALES */}
             <InputField
               label="Nombre completo"
               placeholder="Ej. Diego Márquez Domínguez"
@@ -276,7 +265,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
               isPassword
             />
 
-            {/* Indicador de requisitos de contraseña */}
             {formData.password.length > 0 && (
               <View style={styles.passwordRulesBox}>
                 <Text style={styles.passwordRulesTitle}>Requisitos de seguridad:</Text>
@@ -345,7 +333,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
               isPassword
             />
 
-            {/* CAMPOS DINÁMICOS SEGÚN TIPO DE USUARIO */}
+            {/* Campos que dependen del tipo de usuario */}
             {formData.userType === 'alumno' && (
               <View style={styles.dynamicSection}>
                 <View style={styles.dynamicHeader}>
@@ -353,7 +341,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
                   <Text style={styles.dynamicTitle}>Requisitos de Alumno</Text>
                 </View>
 
-                {/* Carrera */}
                 <SelectModalField
                   label="Carrera institucional"
                   value={formData.career}
@@ -367,7 +354,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
                   iconName="school-outline"
                 />
 
-                {/* Retícula académica vigente (OBLIGATORIA) */}
                 <DocumentPickerField
                   label="Retícula académica vigente"
                   sublabel="Documento oficial expedido por el TecNM Campus Morelia."
@@ -392,7 +378,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
                   <Text style={styles.dynamicTitle}>Requisitos de Maestro</Text>
                 </View>
 
-                {/* Área académica o departamento */}
                 <SelectModalField
                   label="Área académica o departamento"
                   value={formData.department}
@@ -406,7 +391,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
                   iconName="office-building"
                 />
 
-                {/* Carga de materias u horario actual (OBLIGATORIO) */}
                 <DocumentPickerField
                   label="Carga de materias u horario actual"
                   sublabel="Horario docente del semestre en curso."
@@ -424,7 +408,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
               </View>
             )}
 
-            {/* AVISO SI NO SE HA SELECCIONADO TIPO */}
             {!formData.userType && (
               <View style={styles.unselectedTypeBox}>
                 <MaterialCommunityIcons name="cursor-pointer" size={20} color={THEME.colors.accentDark} />
@@ -434,7 +417,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
               </View>
             )}
 
-            {/* TÉRMINOS Y CONDICIONES / AVISO DE PRIVACIDAD */}
             <View style={styles.termsSection}>
               <TouchableOpacity
                 style={styles.checkboxRow}
@@ -489,7 +471,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
               ) : null}
             </View>
 
-            {/* BOTÓN PRINCIPAL DE REGISTRO */}
             <TouchableOpacity
               style={[
                 styles.submitButton,
@@ -523,7 +504,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
           </View>
         </View>
 
-        {/* MODAL DE TÉRMINOS Y CONDICIONES */}
         <TermsModal
           visible={showTermsModal}
           onClose={() => setShowTermsModal(false)}
@@ -535,7 +515,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
           }}
         />
 
-        {/* MODAL DE ÉXITO DE REGISTRO (SPRINT 1) */}
         <SuccessModal
           visible={showSuccessModal}
           data={submittedData}

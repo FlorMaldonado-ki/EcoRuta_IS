@@ -25,6 +25,7 @@ import type { TripDTO, UserDTO } from '../types/api';
 import { useNotifications } from '../hooks/useNotifications';
 import { useFinishTrip } from '../hooks/useFinishTrip';
 import { TripImpactBadge } from '../components/TripImpactBadge';
+import { DriverAvatar } from '../components/DriverAvatar';
 import { confirmAction } from '../utils/notify';
 
 interface MyTripsScreenProps {
@@ -58,14 +59,13 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
   const { showAlert } = useNotifications();
   const [feedback, setFeedback] = useState<{ text: string; type: 'success' | 'error' | 'warning' } | null>(null);
 
-  // Modal para confirmación de cancelación de pasajero con aviso de 20 min (RN-06)
+  // Confirmación de cancelación; avisa si faltan menos de 20 min para la salida.
   const [cancelReservationTarget, setCancelReservationTarget] = useState<{
     reservationId: string;
     trip: TripDTO;
     isLate: boolean;
   } | null>(null);
 
-  // Modal para confirmación de cancelación de conductor
   const [cancelTripTarget, setCancelTripTarget] = useState<TripDTO | null>(null);
 
   const loadData = async () => {
@@ -86,10 +86,10 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser.id]);
 
-  // SCRUM-61 · RF-19: finalizar con confirmación y resumen del CO₂; después se recarga la lista.
+  // Al finalizar se muestra el resumen del CO₂ y se recarga la lista.
   const { requestFinish, finishingId } = useFinishTrip(currentUser, () => { loadData(); });
 
-  /** RF-13: con pasajeros aceptados no se edita; se sugiere cancelar y publicar de nuevo. */
+  /** Con pasajeros aceptados no se edita; se sugiere cancelar y publicar de nuevo. */
   const handleEdit = (trip: TripDTO) => {
     if (canEditTrip(trip)) {
       onEditTrip(trip);
@@ -103,7 +103,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
     );
   };
 
-  // Filtrado de viajes de pasajero
   const filteredPassengerList = useMemo(() => {
     return passengerTrips.filter((item) => {
       const resStatus = item.reservation.status;
@@ -115,12 +114,11 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
     });
   }, [passengerTrips, statusFilter]);
 
-  // Filtrado de viajes de conductor
   const filteredDriverList = useMemo(() => {
     return driverTrips
       .filter(({ trip, bucket }) => {
         const isCancelled = trip.status === 'cancelled';
-        // Un viaje cuya hora ya pasó pero no se ha finalizado sigue "activo": falta finalizarlo (RF-19).
+        // Un viaje cuya hora ya pasó pero no se ha finalizado sigue "activo": falta finalizarlo.
         const pendingFinish = trip.status === 'published' || trip.status === 'in_progress';
         if (statusFilter === 'active') return (bucket !== 'history' || pendingFinish) && !isCancelled;
         if (statusFilter === 'finished') return trip.status === 'finished';
@@ -129,7 +127,7 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
       .map(({ trip }) => trip);
   }, [driverTrips, statusFilter]);
 
-  // Manejar solicitud de cancelación de pasajero (RN-06: tardía solo si ya estaba aceptada)
+  // La cancelación cuenta como tardía solo si la reserva ya estaba aceptada.
   const handlePromptCancelReservation = (reservationId: string, trip: TripDTO, wasAccepted: boolean) => {
     const minutesToDeparture = (new Date(trip.departureAt).getTime() - Date.now()) / 60_000;
     setCancelReservationTarget({ reservationId, trip, isLate: wasAccepted && minutesToDeparture < 20 });
@@ -159,7 +157,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
     }
   };
 
-  // Cancelar viaje por conductor
   const handleConfirmCancelTrip = async () => {
     if (!cancelTripTarget) return;
     const tripId = cancelTripTarget.id;
@@ -192,13 +189,11 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
       <Header subtitle="Historial y Viajes en Curso" />
 
       <View style={styles.body}>
-        {/* Barra superior */}
         <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.8}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={THEME.colors.primary} />
           <Text style={styles.backBtnText}>Volver</Text>
         </TouchableOpacity>
 
-        {/* Feedback alert */}
         {feedback && (
           <View
             style={[
@@ -348,9 +343,7 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
           </View>
         )}
 
-        {/* ================================================================= */}
-        {/* VISTA COMO PASAJERO                                               */}
-        {/* ================================================================= */}
+        {/* ── Vista como pasajero ── */}
         {!isLoading && roleMode === 'passenger' && (
           <View>
             {filteredPassengerList.length === 0 ? (
@@ -377,16 +370,15 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
 
                 return (
                   <View key={reservation.id} style={styles.tripCard}>
-                    {/* Cabecera del Viaje */}
                     <View style={styles.tripCardHeader}>
+                      <DriverAvatar fullName={trip.driver.fullName} photoUrl={trip.driver.photoUrl} size={42} />
                       <View style={styles.driverCol}>
-                        <Text style={styles.driverName}>{trip.driver.fullName}</Text>
-                        <Text style={styles.driverCar}>
+                        <Text style={styles.driverName} numberOfLines={1}>{trip.driver.fullName}</Text>
+                        <Text style={styles.driverCar} numberOfLines={1}>
                           {trip.vehicle.brand} {trip.vehicle.model} · {trip.vehicle.color}
                         </Text>
                       </View>
 
-                      {/* Badge de estado de reservación */}
                       <View
                         style={[
                           styles.badgePill,
@@ -420,7 +412,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       </View>
                     </View>
 
-                    {/* Regla de Privacidad RNF-12: Placas protegidas */}
                     <View style={styles.platesContainer}>
                       {isAccepted ? (
                         <View style={styles.platesConfirmedRow}>
@@ -449,7 +440,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       </View>
                     ) : null}
 
-                    {/* Origen y Destino */}
                     <View style={styles.tripRouteBox}>
                       <View style={styles.routeItemRow}>
                         <View style={[styles.miniDot, { backgroundColor: THEME.colors.success }]} />
@@ -465,7 +455,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       </View>
                     </View>
 
-                    {/* Fecha y Hora */}
                     <View style={styles.timeRow}>
                       <View style={styles.timeTag}>
                         <MaterialCommunityIcons name="clock-outline" size={14} color={THEME.colors.primary} />
@@ -477,7 +466,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       </View>
                     </View>
 
-                    {/* SCRUM-64 · RF-21: CO₂ del viaje finalizado */}
                     {trip.status === 'finished' && trip.impact && isAccepted ? (
                       <TripImpactBadge impact={trip.impact} asPassenger compact />
                     ) : null}
@@ -512,9 +500,7 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
           </View>
         )}
 
-        {/* ================================================================= */}
-        {/* VISTA COMO CONDUCTOR                                              */}
-        {/* ================================================================= */}
+        {/* ── Vista como conductor ── */}
         {!isLoading && roleMode === 'driver' && (
           <View>
             {/* Acceso directo a solicitudes y registrar */}
@@ -564,7 +550,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
 
                 return (
                   <View key={trip.id} style={styles.tripCard}>
-                    {/* Cabecera */}
                     <View style={styles.tripCardHeader}>
                       <View style={styles.driverCol}>
                         <Text style={styles.driverName}>
@@ -610,7 +595,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       </View>
                     </View>
 
-                    {/* Origen y Destino */}
                     <View style={styles.tripRouteBox}>
                       <View style={styles.routeItemRow}>
                         <View style={[styles.miniDot, { backgroundColor: THEME.colors.success }]} />
@@ -626,7 +610,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       </View>
                     </View>
 
-                    {/* Fecha y Hora */}
                     <View style={styles.timeRow}>
                       <View style={styles.timeTag}>
                         <MaterialCommunityIcons name="clock-outline" size={14} color={THEME.colors.primary} />
@@ -644,7 +627,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       </View>
                     </View>
 
-                    {/* SCRUM-64 · RF-21: CO₂ del viaje finalizado */}
                     {trip.status === 'finished' ? (
                       trip.impact ? (
                         <TripImpactBadge impact={trip.impact} compact />
@@ -665,7 +647,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                           <Text style={styles.detailBtnText}>Ver detalle</Text>
                         </TouchableOpacity>
 
-                        {/* SCRUM-59 · RF-13: editar (solo sin pasajeros aceptados) */}
                         <TouchableOpacity
                           style={styles.detailBtn}
                           onPress={() => handleEdit(trip)}
@@ -691,7 +672,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
                       </View>
                     )}
 
-                    {/* SCRUM-61 · RF-19: finalizar (deshabilitado hasta la hora de salida) */}
                     {(isUpcoming || readyToFinish) && (
                       <View style={styles.finishRow}>
                         {readyToFinish ? (
@@ -736,7 +716,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
         )}
       </View>
 
-      {/* Modal de Cancelación de Pasajero (con aviso de RN-06) */}
       <Modal visible={!!cancelReservationTarget} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -778,7 +757,6 @@ export const MyTripsScreen: React.FC<MyTripsScreenProps> = ({
         </View>
       </Modal>
 
-      {/* Modal de Cancelación de Viaje por Conductor */}
       <Modal visible={!!cancelTripTarget} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -997,7 +975,8 @@ const styles = StyleSheet.create({
   tripCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    gap: 10,
     marginBottom: 8,
   },
   driverCol: {

@@ -47,7 +47,6 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
   const driverRoute = getDriverRoute();
   const { unread: unreadNotifs, badges } = useNotifications();
 
-  // Determinar estado de la ruta del conductor
   const hasRouteConfigured = !!driverRoute && (driverRoute.meetingPoints || []).length > 0;
   const routeStateText = hasRouteConfigured
     ? 'Ruta configurada'
@@ -66,9 +65,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
           <View style={styles.backdrop} />
         </TouchableWithoutFeedback>
 
-        {/* Panel lateral */}
         <View style={styles.drawerPanel}>
-          {/* Cabecera del Usuario */}
           <View style={styles.drawerHeader}>
             <View style={styles.avatarCircle}>
               <MaterialCommunityIcons
@@ -91,7 +88,6 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
           </View>
 
           <ScrollView style={styles.menuScroll} contentContainerStyle={styles.menuContent}>
-            {/* Sección: Navegación General */}
             <Text style={styles.sectionHeader}>Principal</Text>
 
             <TouchableOpacity
@@ -178,10 +174,9 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
               <SectionBadge count={badges.myTrips.count} critical={badges.myTrips.critical} variant="inline" />
             </TouchableOpacity>
 
-            {/* SECCIÓN CONDUCTOR */}
             <Text style={styles.sectionHeader}>Módulo Conductor</Text>
 
-            {/* ELEMENTO OBLIGATORIO DESTACADO EN COLOR GUINDA (Módulo 8) */}
+            {/* La ruta habitual se destaca: es obligatoria para publicar viajes. */}
             <TouchableOpacity
               style={[
                 styles.menuItemRouteFeatured,
@@ -197,7 +192,6 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                   <Text style={styles.routeFeaturedTitle}>Ruta Actual (Conductor)</Text>
                 </View>
 
-                {/* Badge de estado obligatorio (Módulo 8) */}
                 <View
                   style={[
                     styles.routeStatusBadge,
@@ -307,7 +301,6 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
               </Text>
             </TouchableOpacity>
 
-            {/* SECCIÓN PREFERENCIAS */}
             <Text style={styles.sectionHeader}>Cuenta y Alertas</Text>
 
             <TouchableOpacity
@@ -342,7 +335,6 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
               />
             </TouchableOpacity>
 
-            {/* CERRAR SESIÓN */}
             <TouchableOpacity
               style={styles.logoutItem}
               onPress={() => {
@@ -466,9 +458,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: THEME.colors.textPrimary,
   },
-  // ESTILO OBLIGATORIO DESTACADO EN COLOR GUINDA (Módulo 8)
   menuItemRouteFeatured: {
-    backgroundColor: THEME.colors.primary, // Guinda institucional #6B1736
+    backgroundColor: THEME.colors.primary,
     borderRadius: THEME.borderRadius.lg,
     padding: 14,
     marginBottom: 8,
