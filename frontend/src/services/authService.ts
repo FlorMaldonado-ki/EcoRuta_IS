@@ -10,7 +10,7 @@ import type {
 import type { AttachedFile, RegistrationFormData } from '../types/registration';
 
 /** Adjunta el archivo como lo espera cada plataforma. */
-function appendFile(fd: FormData, field: string, file: AttachedFile) {
+export function appendFile(fd: FormData, field: string, file: AttachedFile) {
   if (Platform.OS === 'web' && file.webFile) {
     fd.append(field, file.webFile, file.name);
     return;
@@ -53,7 +53,8 @@ export const forgotPassword = (email: string) =>
   apiRequest<MessageResponse>('/api/auth/forgot-password', { body: { email: email.trim().toLowerCase() }, token: null });
 
 /** GET y PATCH /api/me */
-export const getMe = () => apiRequest<UserDTO>('/api/me');
+/** Perfil propio. Con `token` se valida una sesión guardada antes de activarla. */
+export const getMe = (token?: string) => apiRequest<UserDTO>('/api/me', token ? { token } : {});
 export const updateMe = (changes: UpdateProfileRequest) =>
   apiRequest<UserDTO>('/api/me', { method: 'PATCH', body: changes });
 
