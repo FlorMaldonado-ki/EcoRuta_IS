@@ -44,4 +44,27 @@ function documentoRegistro(req, res, next) {
   });
 }
 
-module.exports = { documentoRegistro, detectarMime };
+const MAX_FOTO_BYTES = 5 * 1024 * 1024;
+
+const recibirFoto = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FOTO_BYTES, files: 1, fields: 5 },
+}).single('photo');
+
+/** Foto de perfil (multipart, campo "photo"): solo PNG o JPG de hasta 5 MB. */
+function fotoPerfil(req, res, next) {
+  recibirFoto(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') return next(new ValidationError({ photo: 'La foto excede 5 MB.' }));
+      if (err.code === 'LIMIT_UNEXPECTED_FILE') return next(new ValidationError({ photo: 'Envía una sola foto en el campo "photo".' }));
+      return next(err);
+    }
+    if (!req.file) return next(new ValidationError({ photo: 'Toma tu fotografía con la cámara.' }));
+    const real = detectarMime(req.file.buffer);
+    if (real !== 'image/png' && real !== 'image/jpeg') return next(new ValidationError({ photo: 'La foto debe ser PNG o JPG.' }));
+    req.file.mimetype = real;
+    next();
+  });
+}
+
+module.exports = { documentoRegistro, fotoPerfil, detectarMime };

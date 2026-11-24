@@ -19,7 +19,7 @@ function appendFile(fd: FormData, field: string, file: AttachedFile) {
   fd.append(field, { uri: file.uri, name: file.name, type: file.mimeType ?? 'application/pdf' } as unknown as Blob);
 }
 
-/** RF-01 · POST /api/auth/register (multipart/form-data). */
+/** POST /api/auth/register (multipart/form-data). */
 export function register(data: RegistrationFormData): Promise<RegisterResponse> {
   const fd = new FormData();
   fd.append('userType', data.userType ?? '');
@@ -37,22 +37,34 @@ export function register(data: RegistrationFormData): Promise<RegisterResponse> 
   return apiRequest<RegisterResponse>('/api/auth/register', { formData: fd, token: null });
 }
 
-/** RF-03 · POST /api/auth/login */
+/** POST /api/auth/login */
 export const login = (email: string, password: string) =>
   apiRequest<LoginResponse>('/api/auth/login', {
     body: { email: email.trim().toLowerCase(), password },
     token: null,
   });
 
-/** RF-02 · reenviar enlace de verificación */
+/** POST /api/auth/resend-verification */
 export const resendVerification = (email: string) =>
   apiRequest<MessageResponse>('/api/auth/resend-verification', { body: { email: email.trim().toLowerCase() }, token: null });
 
-/** RF-04 · enviar enlace de recuperación */
+/** POST /api/auth/forgot-password */
 export const forgotPassword = (email: string) =>
   apiRequest<MessageResponse>('/api/auth/forgot-password', { body: { email: email.trim().toLowerCase() }, token: null });
 
-/** RF-05 · perfil */
+/** GET y PATCH /api/me */
 export const getMe = () => apiRequest<UserDTO>('/api/me');
 export const updateMe = (changes: UpdateProfileRequest) =>
   apiRequest<UserDTO>('/api/me', { method: 'PATCH', body: changes });
+
+/** PUT /api/me/foto con la foto (data URL JPEG) tomada en CameraCaptureModal. */
+export async function uploadProfilePhoto(dataUrl: string): Promise<UserDTO> {
+  const fd = new FormData();
+  if (Platform.OS === 'web') {
+    const blob = await (await fetch(dataUrl)).blob();
+    fd.append('photo', blob, 'foto.jpg');
+  } else {
+    fd.append('photo', { uri: dataUrl, name: 'foto.jpg', type: 'image/jpeg' } as unknown as Blob);
+  }
+  return apiRequest<UserDTO>('/api/me/foto', { method: 'PUT', formData: fd });
+}

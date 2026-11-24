@@ -28,7 +28,7 @@ export const TECNM_MORELIA_DEPARTMENTS = [
 
 export const INSTITUTIONAL_DOMAIN = '@morelia.tecnm.mx';
 
-/** Puntos de referencia oficiales del TecNM Campus Morelia (Sprint 2) */
+/** Puntos de referencia oficiales del TecNM Campus Morelia */
 export interface CampusPointOption {
   key: string;
   name: string;

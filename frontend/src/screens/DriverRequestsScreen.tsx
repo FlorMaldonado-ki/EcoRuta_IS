@@ -28,6 +28,13 @@ interface DriverRequestsScreenProps {
 
 type TabFilter = 'pendiente' | 'aceptada' | 'rechazada' | 'todas';
 
+const TABS: { key: TabFilter; label: string }[] = [
+  { key: 'pendiente', label: 'Pendientes' },
+  { key: 'aceptada', label: 'Aceptadas' },
+  { key: 'rechazada', label: 'Rechazadas' },
+  { key: 'todas', label: 'Todas' },
+];
+
 export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
   currentUser,
   onBack,
@@ -100,14 +107,14 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
       case 'solicitada':
       case 'pendiente':
         return {
-          label: 'Pendiente de respuesta',
+          label: 'Pendiente',
           bg: THEME.colors.warningBg,
           color: THEME.colors.warning,
           icon: 'clock-outline',
         };
       case 'aceptada':
         return {
-          label: 'Aceptada · Lugar asignado',
+          label: 'Aceptada',
           bg: THEME.colors.successBg,
           color: THEME.colors.success,
           icon: 'check-circle-outline',
@@ -122,7 +129,7 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
       case 'cancelada':
       default:
         return {
-          label: 'Cancelada por pasajero',
+          label: 'Cancelada',
           bg: THEME.colors.surfaceAlt,
           color: THEME.colors.textMuted,
           icon: 'cancel',
@@ -135,13 +142,11 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
       <Header subtitle="Gestión de Solicitudes de Pasajeros" />
 
       <View style={styles.body}>
-        {/* Barra superior */}
         <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.8}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={THEME.colors.primary} />
           <Text style={styles.backBtnText}>Volver</Text>
         </TouchableOpacity>
 
-        {/* Feedback alert */}
         {feedbackMessage && (
           <View
             style={[
@@ -167,55 +172,36 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
           </View>
         )}
 
-        {/* Pestañas de estado */}
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'pendiente' && styles.tabActive]}
-            onPress={() => setActiveTab('pendiente')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.tabText, activeTab === 'pendiente' && styles.tabTextActive]}>
-              Pendientes
-            </Text>
-            {pendingCount > 0 && (
-              <View style={styles.tabBadge}>
-                <Text style={styles.tabBadgeText}>{pendingCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabsScroll}
+          contentContainerStyle={styles.tabsContainer}
+        >
+          {TABS.map((tab) => {
+            const active = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[styles.tab, active && styles.tabActive]}
+                onPress={() => setActiveTab(tab.key)}
+                activeOpacity={0.8}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+              >
+                <Text style={[styles.tabText, active && styles.tabTextActive]} numberOfLines={1}>
+                  {tab.label}
+                </Text>
+                {tab.key === 'pendiente' && pendingCount > 0 && (
+                  <View style={styles.tabBadge}>
+                    <Text style={styles.tabBadgeText}>{pendingCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'aceptada' && styles.tabActive]}
-            onPress={() => setActiveTab('aceptada')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.tabText, activeTab === 'aceptada' && styles.tabTextActive]}>
-              Aceptadas
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'rechazada' && styles.tabActive]}
-            onPress={() => setActiveTab('rechazada')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.tabText, activeTab === 'rechazada' && styles.tabTextActive]}>
-              Rechazadas
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'todas' && styles.tabActive]}
-            onPress={() => setActiveTab('todas')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.tabText, activeTab === 'todas' && styles.tabTextActive]}>
-              Todas
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Lista de solicitudes */}
         {isLoading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color={THEME.colors.primary} />
@@ -231,14 +217,14 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
             <Text style={styles.emptySubtitle}>
               {activeTab === 'pendiente'
                 ? 'No tienes solicitudes pendientes por responder en este momento.'
-                : `No hay registros en la categoría "${activeTab}".`}
+                : `No hay solicitudes ${TABS.find((t) => t.key === activeTab)?.label.toLowerCase()}.`}
             </Text>
           </View>
         ) : (
           filteredReservations.map((res) => {
             const waiting = res.trip ? isWaitlisted(res.status, res.trip) : false;
             const badge = waiting
-              ? { label: 'En espera · viaje lleno', bg: THEME.colors.warningBg, color: THEME.colors.warning, icon: 'account-clock' }
+              ? { label: 'En espera', bg: THEME.colors.warningBg, color: THEME.colors.warning, icon: 'account-clock' }
               : getStatusBadge(res.status);
             const isActing = actionLoadingId === res.id;
             const jp = res.joinPoint;
@@ -251,7 +237,6 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
 
             return (
               <View key={res.id} style={styles.requestCard}>
-                {/* Cabecera de la solicitud: Pasajero y Badge */}
                 <View style={styles.cardTopRow}>
                   <View style={styles.passengerRow}>
                     <View style={styles.passengerAvatar}>
@@ -262,8 +247,8 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                       />
                     </View>
                     <View style={styles.passengerDetails}>
-                      <Text style={styles.passengerName}>{res.passengerName}</Text>
-                      <Text style={styles.passengerAffiliation}>
+                      <Text style={styles.passengerName} numberOfLines={2}>{res.passengerName}</Text>
+                      <Text style={styles.passengerAffiliation} numberOfLines={1}>
                         {res.passengerAffiliation || 'TecNM Campus Morelia'}
                       </Text>
                     </View>
@@ -275,16 +260,14 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                       size={14}
                       color={badge.color}
                     />
-                    <Text style={[styles.statusBadgeText, { color: badge.color }]}>
+                    <Text style={[styles.statusBadgeText, { color: badge.color }]} numberOfLines={1}>
                       {badge.label}
                     </Text>
                   </View>
                 </View>
 
-                {/* Separador */}
                 <View style={styles.cardDivider} />
 
-                {/* Fecha y detalles */}
                 <View style={styles.metaRow}>
                   <MaterialCommunityIcons
                     name="calendar-clock"
@@ -309,7 +292,6 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                   </View>
                 ) : null}
 
-                {/* Dónde se une el pasajero */}
                 {jp ? (
                   <View style={[styles.joinBox, jp.type === 'proposed' && styles.joinBoxProposed]}>
                     <MaterialCommunityIcons
@@ -321,8 +303,8 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                       <Text style={styles.joinLabel}>
                         {jp.type === 'driver' ? 'Se une en tu punto de encuentro' : 'Propone otro punto de la ruta'}
                       </Text>
-                      <Text style={styles.joinName}>{jp.name}</Text>
-                      {jp.note ? <Text style={styles.joinNote}>“{jp.note}”</Text> : null}
+                      <Text style={styles.joinName} numberOfLines={2}>{jp.name}</Text>
+                      {jp.note ? <Text style={styles.joinNote} numberOfLines={3}>“{jp.note}”</Text> : null}
                       {jp.type === 'proposed' && (
                         <TouchableOpacity
                           onPress={() => Linking.openURL(`https://www.openstreetmap.org/?mlat=${jp.lat}&mlon=${jp.lng}#map=18/${jp.lat}/${jp.lng}`)}
@@ -339,7 +321,7 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                   <View style={styles.metaRow}>
                     <MaterialCommunityIcons name="information-outline" size={16} color={THEME.colors.warning} />
                     <Text style={[styles.metaText, { color: THEME.colors.warning }]}>
-                      Tu viaje está lleno. Podrás aceptarlo si alguien cancela; ya le avisamos que está en lista de espera.
+                      Viaje lleno: podrás aceptarlo si alguien cancela. Ya avisamos al pasajero.
                     </Text>
                   </View>
                 )}
@@ -347,11 +329,10 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                 {res.status === 'aceptada' && res.passengerPhone ? (
                   <View style={styles.metaRow}>
                     <MaterialCommunityIcons name="phone" size={16} color={THEME.colors.textMuted} />
-                    <Text style={styles.metaText}>Teléfono: {res.passengerPhone}</Text>
+                    <Text style={styles.metaText} numberOfLines={1}>Teléfono: {res.passengerPhone}</Text>
                   </View>
                 ) : null}
 
-                {/* Botones de Acción (Si está pendiente o solicitada) */}
                 {(res.status === 'pendiente' || res.status === 'solicitada') && (
                   <View style={styles.actionButtonsRow}>
                     <TouchableOpacity
@@ -369,7 +350,7 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                             size={18}
                             color={THEME.colors.error}
                           />
-                          <Text style={styles.rejectBtnText}>Rechazar</Text>
+                          <Text style={styles.rejectBtnText} numberOfLines={1}>Rechazar</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -389,7 +370,7 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                             size={18}
                             color={THEME.colors.textInverse}
                           />
-                          <Text style={styles.acceptBtnText}>Aceptar Pasajero</Text>
+                          <Text style={styles.acceptBtnText} numberOfLines={1}>Aceptar</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -422,6 +403,7 @@ const styles = StyleSheet.create({
   },
   joinBody: {
     flex: 1,
+    minWidth: 0,
   },
   joinLabel: {
     fontSize: 10,
@@ -501,22 +483,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1,
   },
-  tabsContainer: {
-    flexDirection: 'row',
+  tabsScroll: {
+    flexGrow: 0,
+    marginBottom: 16,
     backgroundColor: THEME.colors.surface,
-    padding: 4,
     borderRadius: THEME.borderRadius.lg,
     borderWidth: 1,
     borderColor: THEME.colors.border,
-    marginBottom: 16,
+  },
+  tabsContainer: {
+    flexGrow: 1,
+    flexDirection: 'row',
+    padding: 4,
     gap: 4,
   },
   tab: {
-    flex: 1,
+    flexGrow: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: THEME.borderRadius.md,
     gap: 6,
   },
@@ -579,13 +566,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     gap: 8,
-    flexWrap: 'wrap',
   },
   passengerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
+    minWidth: 0,
   },
   passengerAvatar: {
     width: 44,
@@ -599,6 +586,7 @@ const styles = StyleSheet.create({
   },
   passengerDetails: {
     flex: 1,
+    minWidth: 0,
   },
   passengerName: {
     fontSize: 15,
@@ -611,6 +599,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   statusBadge: {
+    flexShrink: 0,
+    maxWidth: '45%',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
@@ -619,7 +609,8 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   statusBadgeText: {
-    fontSize: 11,
+    flexShrink: 1,
+    fontSize: 12,
     fontWeight: '700',
   },
   cardDivider: {
@@ -644,6 +635,8 @@ const styles = StyleSheet.create({
   },
   rejectBtn: {
     flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -655,12 +648,15 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   rejectBtnText: {
-    fontSize: 13,
+    flexShrink: 1,
+    fontSize: 14,
     fontWeight: '700',
     color: THEME.colors.error,
   },
   acceptBtn: {
     flex: 1.5,
+    minWidth: 0,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -671,7 +667,8 @@ const styles = StyleSheet.create({
     ...THEME.shadows.card,
   },
   acceptBtnText: {
-    fontSize: 13,
+    flexShrink: 1,
+    fontSize: 14,
     fontWeight: '800',
     color: THEME.colors.textInverse,
   },

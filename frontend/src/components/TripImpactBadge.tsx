@@ -1,4 +1,4 @@
-/** SCRUM-64 · RF-21: "Este viaje ahorró X kg de CO₂" en el detalle y en el historial. */
+/** "Este viaje ahorró X kg de CO₂" en el detalle y en el historial. */
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';

@@ -107,7 +107,6 @@ export const NotificationsCenterModal: React.FC = () => {
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.overlayTap} onPress={closeCenter} activeOpacity={1} />
         <SafeAreaView style={styles.sheet}>
-          {/* Encabezado guinda */}
           <View style={styles.header}>
             <View style={styles.grabber} />
             <View style={styles.headerRow}>
@@ -136,7 +135,6 @@ export const NotificationsCenterModal: React.FC = () => {
           </View>
           <View style={styles.goldLine} />
 
-          {/* Filtros */}
           <View style={styles.filters}>
             {FILTERS.map((f) => {
               const active = filter === f.key;

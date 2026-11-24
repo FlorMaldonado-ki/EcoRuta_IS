@@ -8,7 +8,7 @@
 const SELECT_DETALLE = `
 SELECT v.*,
        u.nombre_completo                   AS conductor_nombre,
-       COALESCE(u.carrera, u.departamento) AS conductor_adscripcion,
+       COALESCE(u.carrera, u.departamento) AS conductor_adscripcion, u.foto_storage_key AS conductor_foto,
        u.telefono                          AS conductor_telefono,
        (SELECT round(avg(c.puntaje)::numeric, 2) FROM calificacion c WHERE c.evaluado_id = u.id) AS conductor_calificacion,
        ve.marca AS vehiculo_marca, ve.modelo AS vehiculo_modelo, ve.color AS vehiculo_color, ve.placas AS vehiculo_placas,
@@ -106,7 +106,7 @@ const VENTANA = `
 const SELECT_BUSQUEDA = `
 SELECT v.*, %DISTANCIA% AS distancia_usuario_km,
        u.nombre_completo                   AS conductor_nombre,
-       COALESCE(u.carrera, u.departamento) AS conductor_adscripcion,
+       COALESCE(u.carrera, u.departamento) AS conductor_adscripcion, u.foto_storage_key AS conductor_foto,
        (SELECT round(avg(c.puntaje)::numeric, 2) FROM calificacion c WHERE c.evaluado_id = u.id) AS conductor_calificacion,
        ve.marca AS vehiculo_marca, ve.modelo AS vehiculo_modelo, ve.color AS vehiculo_color,
        mr.id AS mi_reserva_id, mr.estado AS mi_reserva_estado, mr.creada_en AS mi_reserva_creada_en,
@@ -202,7 +202,7 @@ async function listarComoPasajero(db, pasajeroId, estado, { limite, pagina }) {
         ORDER BY r.viaje_id, (r.estado IN ('solicitada', 'aceptada')) DESC, r.creada_en DESC
      )
      SELECT v.*,
-            u.nombre_completo AS conductor_nombre, COALESCE(u.carrera, u.departamento) AS conductor_adscripcion,
+            u.nombre_completo AS conductor_nombre, COALESCE(u.carrera, u.departamento) AS conductor_adscripcion, u.foto_storage_key AS conductor_foto,
             u.telefono AS conductor_telefono,
             ve.marca AS vehiculo_marca, ve.modelo AS vehiculo_modelo, ve.color AS vehiculo_color, ve.placas AS vehiculo_placas,
             mr.id AS mi_reserva_id, mr.estado AS mi_reserva_estado, mr.creada_en AS mi_reserva_creada_en,

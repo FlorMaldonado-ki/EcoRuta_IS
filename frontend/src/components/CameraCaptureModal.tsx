@@ -32,7 +32,6 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Iniciar cámara al abrir el modal
   useEffect(() => {
     if (!visible) {
       detenerCamara();
@@ -150,7 +149,6 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
-        {/* Encabezado */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel="Cerrar cámara">
             <MaterialCommunityIcons name="close" size={24} color="#FFFFFF" />
@@ -159,7 +157,6 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
           <View style={{ width: 40 }} />
         </View>
 
-        {/* Contenido principal */}
         <View style={styles.content}>
           {isInitializing ? (
             <View style={styles.centered}>
@@ -180,7 +177,6 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
               </TouchableOpacity>
             </View>
           ) : capturedPhoto ? (
-            // Vista previa de la fotografía capturada
             <View style={styles.previewContainer}>
               <Text style={styles.previewTitle}>Vista previa de la fotografía</Text>
               <Text style={styles.previewSubtitle}>Verifica que tu rostro sea claramente visible</Text>
@@ -205,7 +201,6 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
               </View>
             </View>
           ) : (
-            // Visor de la cámara en vivo
             <View style={styles.viewfinderContainer}>
               <Text style={styles.instructionsText}>
                 Ubica tu rostro dentro del círculo guía para la fotografía oficial de conductor.
@@ -213,7 +208,6 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
               <View style={styles.viewfinderBox}>
                 {Platform.OS === 'web' ? (
-                  // Video stream nativo Web
                   // @ts-ignore
                   <video
                     ref={videoRef}
@@ -240,7 +234,6 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
                 </View>
               </View>
 
-              {/* Botón obturador */}
               <View style={styles.shutterContainer}>
                 <TouchableOpacity style={styles.shutterBtn} onPress={tomarFoto} activeOpacity={0.7}>
                   <View style={styles.shutterInner} />

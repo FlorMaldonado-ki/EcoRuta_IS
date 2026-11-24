@@ -100,9 +100,12 @@ const horaLocal = (d) => new Intl.DateTimeFormat('en-GB', { timeZone: 'America/M
       esperar(r.status === 200, `status ${r.status}`);
       s.vehiculo = r.body.find((v) => v.capacity >= 3);
       if (!s.vehiculo) {
+        const cat = await pedir('GET', '/api/catalogos/vehiculos');
+        const m = cat.body?.models?.[0];
+        esperar(m, 'el catálogo de vehículos está vacío: corre npm run db:catalogo-vehiculos (ver db/README.md)');
         const nuevo = await pedir('POST', '/api/vehiculos', {
           token: s.conductor.token,
-          body: { brand: 'Nissan', model: 'Versa', color: 'Gris', plates: `PRU${crypto.randomBytes(2).toString('hex').toUpperCase()}`, capacity: 5, licenseAndInsuranceDeclared: true },
+          body: { type: m.type, brand: m.brand, model: m.model, year: m.years[0], color: 'Gris', plates: `PRU${crypto.randomBytes(2).toString('hex').toUpperCase()}`, capacity: 5, licenseAndInsuranceDeclared: true },
         });
         esperar([200, 201].includes(nuevo.status), `registrar vehículo: status ${nuevo.status} ${JSON.stringify(nuevo.body?.fields || '')}`);
         s.vehiculo = nuevo.body;

@@ -9,12 +9,21 @@ test('API de vehículos', { skip: omitir }, async (t) => {
   const { iniciarServidor } = require('../helpers/http');
   const ctx = crearContexto();
   const api = await iniciarServidor();
-  t.after(async () => { await ctx.limpiar(); await api.cerrar(); await pool.end(); });
+  // Fila propia del catálogo: la prueba no depende de que el catálogo de vPIC esté cargado.
+  const modelo = `Prueba ${Date.now().toString(36)}`;
+  t.after(async () => {
+    await ctx.limpiar();
+    await pool.query('DELETE FROM catalogo_vehiculo WHERE modelo = $1', [modelo]);
+    await api.cerrar();
+    await pool.end();
+  });
 
   const ana = await ctx.usuario({ nombre: 'Ana Prueba' });
   const beto = await ctx.usuario({ nombre: 'Beto Prueba' });
   const placas = `V${Date.now().toString(36).toUpperCase().slice(-6)}`;
-  const cuerpo = { brand: 'Nissan', model: 'Versa', color: 'Gris', plates: placas.toLowerCase(), capacity: 5, licenseAndInsuranceDeclared: true };
+  await pool.query(
+    `INSERT INTO catalogo_vehiculo (tipo, marca, modelo, anio) VALUES ('automovil', 'Nissan', $1, 2020)`, [modelo]);
+  const cuerpo = { type: 'automovil', brand: 'nissan', model: modelo.toLowerCase(), year: 2020, color: 'Gris', plates: placas.toLowerCase(), capacity: 5, licenseAndInsuranceDeclared: true };
   let id;
 
   await t.test('registro válido → 201 con VehicleDTO y placas normalizadas', async () => {
@@ -22,7 +31,23 @@ test('API de vehículos', { skip: omitir }, async (t) => {
     assert.equal(r.status, 201);
     assert.equal(r.body.plates, placas);
     assert.equal(r.body.active, true);
+    assert.equal(r.body.brand, 'Nissan'); // escritura oficial del catálogo
+    assert.equal(r.body.model, modelo);
+    assert.equal(r.body.year, 2020);
     id = r.body.id;
+  });
+
+  await t.test('combinación que no está en el catálogo → 422 en model', async () => {
+    const r = await api.pedir('POST', '/api/vehiculos', { token: ana.token, body: { ...cuerpo, plates: 'CAT1234', year: 2005 } });
+    assert.equal(r.status, 422);
+    assert.ok(r.body.fields.model);
+  });
+
+  await t.test('GET /api/catalogos/vehiculos es público e incluye la combinación', async () => {
+    const r = await api.pedir('GET', '/api/catalogos/vehiculos');
+    assert.equal(r.status, 200);
+    assert.ok(r.body.types.some((x) => x.key === 'automovil'));
+    assert.ok(Array.isArray(r.body.models));
   });
 
   await t.test('sin declaración de licencia y seguro → 422 en ese campo (RN-12)', async () => {

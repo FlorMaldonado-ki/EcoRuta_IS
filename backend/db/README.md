@@ -50,6 +50,29 @@ npm run db:status
 Usen una rama de Neon por integrante: `main` es la que usa Render y cada quien
 tiene la suya (`dev-<nombre>`).
 
+## Catálogo de vehículos
+
+El registro de vehículos solo acepta combinaciones **tipo + marca + modelo + año**
+que existan en `catalogo_vehiculo` (migración 013). La tabla se crea vacía; mientras
+esté vacía, la app avisa que el catálogo no está disponible y no deja registrar.
+
+Fuente: [NHTSA vPIC](https://vpic.nhtsa.dot.gov/api/), API pública y gratuita.
+**No** está sincronizada con AUTOCOM ni con ningún distribuidor.
+
+```bash
+npm run db:catalogo-vehiculos > db/migrations/014_catalogo_vehiculos_vpic.sql
+# revisa el archivo (marcas sin datos al inicio), commitéalo y:
+npm run db:migrate && npm run db:bundle
+```
+
+- Tarda unos minutos; si vPIC responde 403 bloqueó la IP por exceso de peticiones:
+  espera un rato y vuelve a correrlo.
+- vPIC cubre el mercado de EE. UU. Los modelos que solo se venden en México no
+  aparecen: agrégalos en una migración nueva con `fuente = 'manual'` tomando los
+  datos de una fuente verificable (INEGI RAIAVL o la ficha del fabricante).
+- Para actualizar el catálogo, genera otra migración (las filas usan
+  `ON CONFLICT DO NOTHING`); para retirar un modelo, `activo = false`.
+
 ## Reglas para el equipo
 
 1. **Una migración aplicada nunca se edita.** El ejecutor guarda un checksum y

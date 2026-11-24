@@ -29,7 +29,7 @@ interface PublishTripScreenProps {
   onGoToVehicleSetup: () => void;
   onGoToRouteSetup: () => void;
   onSuccessPublished: () => void;
-  /** SCRUM-59 · RF-13: con un viaje, la pantalla funciona como "Editar viaje" con sus datos precargados. */
+  /** Con un viaje, la pantalla funciona como "Editar viaje" con sus datos precargados. */
   editingTrip?: TripDTO;
   onSuccessEdited?: (trip: TripDTO) => void;
 }
@@ -64,7 +64,7 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
 }) => {
   const isEditing = !!editingTrip;
   const savedRoute = getDriverRoute();
-  // En edición se usa el trayecto del viaje; opcionalmente se reemplaza por la ruta actual del conductor (RF-10 recalcula).
+  // En edición se usa el trayecto del viaje; opcionalmente se reemplaza por la ruta actual del conductor (el backend recalcula distancia y duración).
   const [useCurrentRoute, setUseCurrentRoute] = useState(false);
   const route = editingTrip && !useCurrentRoute ? routeFromTrip(editingTrip) : savedRoute;
   const savedRouteDiffers =
@@ -77,13 +77,11 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
   const [loadingVehicle, setLoadingVehicle] = useState(true);
   const maxSeats = vehicle?.maxSeats ?? 1;
 
-  // Selección de fecha rápida
   const [dateOption, setDateOption] = useState<'today' | 'tomorrow' | 'custom'>(isEditing ? 'custom' : 'today');
   const [customDate, setCustomDate] = useState<string>(
     editingTrip ? localYmd(new Date(editingTrip.departureAt)) : '',
   );
 
-  // Hora de salida (HH:MM)
   // Generar sugerencia de hora válida (al menos 35 min en el futuro)
   const defaultDepartureTime = useMemo(() => {
     const d = new Date(Date.now() + 45 * 60_000);
@@ -109,7 +107,6 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
   // 409 VIAJE_CON_RESERVAS: alguien fue aceptado mientras editabas → se sugiere cancelar.
   const [editConflict, setEditConflict] = useState(false);
 
-  // Estados de validación y carga
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -184,7 +181,7 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
     }
 
     const now = Date.now();
-    const minNoticeMs = 30 * 60_000; // RN-04: mínimo 30 min de anticipación
+    const minNoticeMs = 30 * 60_000; // mínimo 30 min de anticipación
     // En edición, la hora solo se valida si cambió (la API tampoco la revisa si no se envía).
     const departureChanged = !editingTrip ||
       Math.abs(scheduledDateTime.getTime() - new Date(editingTrip.departureAt).getTime()) >= 60_000;
@@ -292,7 +289,6 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
       <Header subtitle={isEditing ? 'Editar viaje' : 'Registro de Viaje Compartido'} />
 
       <View style={styles.body}>
-        {/* Barra superior */}
         <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.8}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={THEME.colors.primary} />
           <Text style={styles.backBtnText}>Volver</Text>
@@ -349,7 +345,6 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
           </TouchableOpacity>
         )}
 
-        {/* Editar: usar la ruta actual del conductor en lugar del trayecto del viaje (RF-10 recalcula) */}
         {isEditing && savedRouteDiffers && (
           <TouchableOpacity
             style={[styles.meetingPointRow, useCurrentRoute && styles.meetingPointRowActive]}
@@ -374,7 +369,6 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
           </TouchableOpacity>
         )}
 
-        {/* Resumen del Trayecto */}
         {route && (
           <View style={styles.sectionCard}>
             <View style={styles.cardHeaderRow}>
@@ -446,14 +440,12 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
           </View>
         )}
 
-        {/* Sección: Programación del Viaje */}
         <View style={styles.sectionCard}>
           <View style={styles.cardHeaderRow}>
             <MaterialCommunityIcons name="clock-outline" size={20} color={THEME.colors.primary} />
             <Text style={styles.cardTitle}>Horario y Lugares</Text>
           </View>
 
-          {/* Selector de fecha */}
           <Text style={styles.inputGroupLabel}>Fecha del viaje</Text>
           <View style={styles.dateSelectorRow}>
             <TouchableOpacity
@@ -521,7 +513,6 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
             />
           )}
 
-          {/* Hora de salida */}
           <InputField
             label="Hora de salida (Formato 24h: HH:MM)"
             value={departureTime}
@@ -537,7 +528,6 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
             </Text>
           </View>
 
-          {/* Lugares ofrecidos */}
           <Text style={styles.inputGroupLabel}>Lugares disponibles a ofrecer</Text>
           <View style={styles.stepperContainer}>
             <TouchableOpacity
@@ -564,7 +554,6 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Notas adicionales */}
           <InputField
             label="Comentarios o indicaciones para tus pasajeros (Opcional)"
             value={notes}
@@ -575,7 +564,6 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
           />
         </View>
 
-        {/* Botón Principal: Registrar Viaje */}
         <TouchableOpacity
           style={[
             styles.publishBtn,
@@ -596,7 +584,6 @@ export const PublishTripScreen: React.FC<PublishTripScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Modal de éxito */}
       <Modal visible={showSuccessModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>

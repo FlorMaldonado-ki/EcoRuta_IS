@@ -14,6 +14,7 @@
     "db:status": "node db/migrate.js status",
     "db:seed": "node db/migrate.js seed",
     "db:bundle": "node db/build-neon-bundle.js",
+    "db:catalogo-vehiculos": "node db/catalogos/importar-vpic.js",
     "test:smoke": "node scripts/smoke-test.js",
     "test": "node test/correr.js",
     "test:concurrencia": "node scripts/concurrencia-asiento.js",

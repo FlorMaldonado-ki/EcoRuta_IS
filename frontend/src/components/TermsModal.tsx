@@ -32,7 +32,6 @@ export const TermsModal: React.FC<TermsModalProps> = ({
     >
       <View style={styles.overlay}>
         <SafeAreaView style={styles.container}>
-          {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerTitleBox}>
               <MaterialCommunityIcons name="file-document-outline" size={24} color={THEME.colors.primary} />
@@ -46,7 +45,6 @@ export const TermsModal: React.FC<TermsModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Scrollable Terms Content */}
           <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
             <Text style={styles.sectionHeader}>1. Propósito y Carácter Comunitario</Text>
             <Text style={styles.paragraph}>
@@ -81,7 +79,6 @@ export const TermsModal: React.FC<TermsModalProps> = ({
             </View>
           </ScrollView>
 
-          {/* Footer Actions */}
           <View style={styles.footer}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
               <Text style={styles.cancelBtnText}>Cerrar</Text>

@@ -22,6 +22,9 @@ interface SelectModalFieldProps {
   onSelect: (value: string) => void;
   error?: string;
   iconName?: keyof typeof MaterialCommunityIcons.glyphMap;
+  /** Bloquea el selector (p. ej. mientras no se elige el campo anterior). */
+  disabled?: boolean;
+  helperText?: string;
 }
 
 export const SelectModalField: React.FC<SelectModalFieldProps> = ({
@@ -33,6 +36,8 @@ export const SelectModalField: React.FC<SelectModalFieldProps> = ({
   onSelect,
   error,
   iconName = 'format-list-bulleted',
+  disabled = false,
+  helperText,
 }) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,10 +65,13 @@ export const SelectModalField: React.FC<SelectModalFieldProps> = ({
           styles.selectorButton,
           error ? styles.selectorError : undefined,
           value ? styles.selectorActive : undefined,
+          disabled ? styles.selectorDisabled : undefined,
         ]}
         onPress={() => setModalVisible(true)}
+        disabled={disabled}
         activeOpacity={0.8}
         accessibilityRole="combobox"
+        accessibilityState={{ disabled }}
         accessibilityLabel={`${label}: ${value || 'no seleccionado'}`}
       >
         <View style={styles.buttonLeft}>
@@ -92,6 +100,8 @@ export const SelectModalField: React.FC<SelectModalFieldProps> = ({
           <MaterialCommunityIcons name="alert-circle-outline" size={14} color={THEME.colors.error} />
           <Text style={styles.errorText}>{error}</Text>
         </View>
+      ) : helperText ? (
+        <Text style={styles.helperText}>{helperText}</Text>
       ) : null}
 
       <Modal
@@ -176,6 +186,14 @@ export const SelectModalField: React.FC<SelectModalFieldProps> = ({
 };
 
 const styles = StyleSheet.create({
+  selectorDisabled: {
+    opacity: 0.5,
+  },
+  helperText: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    marginTop: 4,
+  },
   container: {
     marginBottom: 16,
   },

@@ -1,13 +1,14 @@
 /**
- * SCRUM-66 · RF-23: "Mi impacto". CO₂ ahorrado hoy y en total (kg), desglose
+ * "Mi impacto". CO₂ ahorrado hoy y en total (kg), desglose
  * como conductor y como pasajero, y la lista de viajes con el CO₂ atribuido.
  * Los totales vienen del estado compartido (useImpact): si se finaliza un viaje
- * se actualizan solos (RF-26).
+ * se actualizan solos.
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Header } from '../components/Header';
+import { DriverAvatar } from '../components/DriverAvatar';
 import { THEME } from '../constants/theme';
 import { useImpact } from '../hooks/useImpact';
 import { getMyImpactTrips } from '../services/catalogService';
@@ -161,17 +162,23 @@ export const MyImpactScreen: React.FC<MyImpactScreenProps> = ({ onBack, onGoToSe
               ) : null}
               {trips.map((t) => (
                 <View key={`${t.tripId}-${t.role}`} style={styles.tripRow}>
-                  <View style={styles.tripIcon}>
-                    <MaterialCommunityIcons
-                      name={t.role === 'driver' ? 'steering' : 'seat-passenger'}
-                      size={18}
-                      color={THEME.colors.primary}
-                    />
-                  </View>
+                  {t.role === 'passenger' && t.driver ? (
+                    <DriverAvatar fullName={t.driver.fullName} photoUrl={t.driver.photoUrl} size={32} />
+                  ) : (
+                    <View style={styles.tripIcon}>
+                      <MaterialCommunityIcons
+                        name={t.role === 'driver' ? 'steering' : 'seat-passenger'}
+                        size={18}
+                        color={THEME.colors.primary}
+                      />
+                    </View>
+                  )}
                   <View style={styles.tripText}>
                     <Text style={styles.tripRoute} numberOfLines={1}>{t.origin} → {t.destination}</Text>
-                    <Text style={styles.tripSub}>
-                      {fechaCorta(t.finishedAt ?? t.departureAt)} · {t.role === 'driver' ? `conductor, ${t.passengers} pasajero${t.passengers === 1 ? '' : 's'}` : 'pasajero'} · {formatKm(t.distanceKm)}
+                    <Text style={styles.tripSub} numberOfLines={2}>
+                      {fechaCorta(t.finishedAt ?? t.departureAt)} · {t.role === 'driver'
+                        ? `conductor, ${t.passengers} pasajero${t.passengers === 1 ? '' : 's'}`
+                        : t.driver ? `pasajero con ${t.driver.fullName}` : 'pasajero'} · {formatKm(t.distanceKm)}
                     </Text>
                   </View>
                   <Text style={styles.tripCo2}>{formatKg(t.co2Kg)}</Text>

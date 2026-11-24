@@ -28,7 +28,6 @@ export const UserTypeSelector: React.FC<UserTypeSelectorProps> = ({
       </View>
 
       <View style={styles.optionsRow}>
-        {/* Opción Alumno */}
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => onSelect('alumno')}
@@ -69,7 +68,6 @@ export const UserTypeSelector: React.FC<UserTypeSelectorProps> = ({
           )}
         </TouchableOpacity>
 
-        {/* Opción Maestro */}
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => onSelect('maestro')}

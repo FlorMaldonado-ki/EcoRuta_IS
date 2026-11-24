@@ -1,9 +1,9 @@
 /**
- * EcoRuta Escolar · Contratos TypeScript y Tipos del Frontend (Sprint 1 + Sprint 2)
+ * Tipos que usan las pantallas. Los de la API están en apiBackend.ts.
  */
 import type { UserType, AttachedFile } from './registration';
 
-/** Rol de SEGURIDAD (RNF-09). No confundir con UserType (alumno/maestro). */
+/** Rol de SEGURIDAD. No confundir con UserType (alumno/maestro). */
 export type SecurityRole = 'user' | 'admin';
 export type AccountStatus = 'pending' | 'active' | 'suspended';
 
@@ -57,7 +57,7 @@ export interface CommunityImpactDTO {
   treesEquivalent: number;
 }
 export interface ImpactBreakdown { co2TotalKg: number; co2TodayKg: number; trips: number }
-/** RF-23 · GET /api/impacto/me */
+/** GET /api/impacto/me */
 export interface MyImpactDTO {
   co2TodayKg: number;
   co2TotalKg: number;
@@ -66,7 +66,7 @@ export interface MyImpactDTO {
   asDriver?: ImpactBreakdown;
   asPassenger?: ImpactBreakdown;
 }
-/** RF-23 · un renglón de GET /api/impacto/me/viajes */
+/** Un renglón de GET /api/impacto/me/viajes */
 export interface MyImpactTripDTO {
   tripId: string;
   role: 'driver' | 'passenger';
@@ -81,21 +81,21 @@ export interface MyImpactTripDTO {
   departureAt: string;
   finishedAt: string;
   calculatedAt: string;
+  driver?: { id: string; fullName: string; photoUrl: string | null };
 }
 export interface MyImpactTripsPage { items: MyImpactTripDTO[]; page: number; pageSize: number; hasMore: boolean }
-/** CO₂ ahorrado por un viaje finalizado (RF-21) */
+/** CO₂ ahorrado por un viaje finalizado */
 export interface TripImpact { co2Kg: number; passengers: number; distanceKm: number; emissionFactor: number; passengerCo2Kg: number }
 
-/** Información del vehículo del conductor (Sprint 2) */
 export interface VehicleDTO {
   id: string;
   brand: string;
   model: string;
   color: string;
-  plates?: string | null;       // Protegido por RNF-12: visible solo con reserva aceptada o conductor
+  plates?: string | null;       // Solo para el conductor o con reserva aceptada
   capacity: number;
   active: boolean;
-  declarationLicenseInsurance: boolean; // Declaración bajo protesta (RN-12)
+  declarationLicenseInsurance: boolean; // Declaración bajo protesta
   circulationDoc?: AttachedFile | null;
 }
 
@@ -170,7 +170,7 @@ export interface TripDTO {
     fullName: string;
     affiliation?: string | null;
     photoUrl?: string | null;   // Foto obligatoria desde la cámara
-    phone?: string | null;      // Solo conductor o reserva aceptada (RNF-12)
+    phone?: string | null;      // Solo conductor o reserva aceptada
   };
   vehicle: {
     brand: string;
@@ -185,7 +185,7 @@ export interface TripDTO {
   pendingRequests?: number;     // solo para el conductor
   acceptedPassengers?: number;  // solo para el conductor
   finishedAt?: string | null;
-  impact?: TripImpact | null;   // RF-21 · CO₂ que ahorró (viaje finalizado con pasajeros)
+  impact?: TripImpact | null;   // CO₂ que ahorró (viaje finalizado con pasajeros)
 }
 
 export interface ReservationDTO {
@@ -195,13 +195,13 @@ export interface ReservationDTO {
   passengerName: string;
   passengerAffiliation?: string;
   passengerPhoto?: string | null;
-  passengerPhone?: string | null; // solo con reserva aceptada (RNF-12)
+  passengerPhone?: string | null; // solo con reserva aceptada
   status: ReservationStatus;
   createdAt: string;
   requestedAt?: string;
   respondedAt?: string | null;
   cancelledAt?: string | null;
-  lateCancellation?: boolean; // RN-06: < 20 min antes de salida
+  lateCancellation?: boolean; // < 20 min antes de salida
   joinPoint?: JoinPoint | null; // dónde se une el pasajero
   trip?: TripDTO;
 }

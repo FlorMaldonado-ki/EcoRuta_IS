@@ -42,7 +42,6 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
       <View style={styles.overlay}>
         <SafeAreaView style={styles.cardContainer}>
           <ScrollView contentContainerStyle={styles.content}>
-            {/* Success icon badge */}
             <View style={styles.iconCircle}>
               <MaterialCommunityIcons name="check-decagram" size={48} color={THEME.colors.primary} />
             </View>
@@ -52,7 +51,6 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
               Tu cuenta de EcoRuta Escolar se creó. Solo falta verificar tu correo institucional para activarla.
             </Text>
 
-            {/* Email notice box matching ERS RF-02 */}
             <View style={styles.emailNoticeBox}>
               <MaterialCommunityIcons name="email-check-outline" size={22} color={THEME.colors.primary} />
               <View style={styles.emailNoticeTextWrapper}>
@@ -63,7 +61,6 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
               </View>
             </View>
 
-            {/* Resumen de datos registrados */}
             <View style={styles.summaryCard}>
               <Text style={styles.summaryTitle}>Resumen de registro:</Text>
 
@@ -110,7 +107,6 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
               </View>
             </View>
 
-            {/* Status note */}
             <View style={styles.footerNote}>
               <MaterialCommunityIcons name="information" size={16} color={THEME.colors.accentDark} />
               <Text style={styles.footerNoteText}>
@@ -118,7 +114,6 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
               </Text>
             </View>
 
-            {/* Actions */}
             <View style={styles.actions}>
               <TouchableOpacity
                 style={styles.primaryBtn}

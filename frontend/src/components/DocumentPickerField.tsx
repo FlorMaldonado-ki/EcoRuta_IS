@@ -89,7 +89,6 @@ export const DocumentPickerField: React.FC<DocumentPickerFieldProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Encabezado del campo */}
       <View style={styles.headerRow}>
         <View style={styles.titleWithIcon}>
           <MaterialCommunityIcons name="paperclip" size={18} color={THEME.colors.primary} />
@@ -101,7 +100,6 @@ export const DocumentPickerField: React.FC<DocumentPickerFieldProps> = ({
       </View>
       <Text style={styles.sublabel}>{sublabel}</Text>
 
-      {/* Indicaciones claras */}
       <View style={styles.instructionsBox}>
         <MaterialCommunityIcons
           name="information-outline"
@@ -112,7 +110,6 @@ export const DocumentPickerField: React.FC<DocumentPickerFieldProps> = ({
         <Text style={styles.instructionsText}>{instructions}</Text>
       </View>
 
-      {/* Vista cuando NO hay archivo adjunto */}
       {!file ? (
         <View
           style={[
@@ -192,7 +189,6 @@ export const DocumentPickerField: React.FC<DocumentPickerFieldProps> = ({
             </View>
           </View>
 
-          {/* Botones para Reemplazar o Quitar */}
           <View style={styles.fileCardActions}>
             <TouchableOpacity
               style={styles.replaceBtn}
@@ -227,7 +223,6 @@ export const DocumentPickerField: React.FC<DocumentPickerFieldProps> = ({
         </View>
       )}
 
-      {/* Mensaje de validación / error */}
       {error ? (
         <View style={styles.errorContainer}>
           <MaterialCommunityIcons name="alert-circle-outline" size={15} color={THEME.colors.error} />

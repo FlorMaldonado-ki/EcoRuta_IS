@@ -7,6 +7,7 @@
  */
 const { ValidationError } = require('../../shared/errors');
 const { str, esUuid, entero, numero, pagina, dentroDeZona } = require('../../shared/validacion');
+const { urlFoto } = require('../../shared/fotos');
 
 const DIRECCION_BD_A_CLIENTE = Object.freeze({ hacia_campus: 'to_campus', desde_campus: 'from_campus' });
 const DIRECCION_CLIENTE_A_BD = Object.freeze({ to_campus: 'hacia_campus', from_campus: 'desde_campus' });
@@ -106,6 +107,7 @@ function toViajeDTO(row, { verContacto = false } = {}) {
         id: row.conductor_id,
         fullName: row.conductor_nombre,
         affiliation: row.conductor_adscripcion,
+        photoUrl: urlFoto(row.conductor_id, row.conductor_foto),
         ...(row.conductor_calificacion !== undefined && { ratingAverage: row.conductor_calificacion }),
         ...(verContacto && { phone: row.conductor_telefono ?? null }),
       },

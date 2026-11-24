@@ -8,6 +8,7 @@
  *   GET /api/impacto/me/viajes?page=1     viajes con el CO₂ atribuido, 20 por página (RF-23)
  */
 const { Router } = require('express');
+const { urlFoto } = require('../../shared/fotos');
 const { pool } = require('../../config/db');
 const { requireAuth } = require('../../middlewares/auth');
 const { ValidationError } = require('../../shared/errors');
@@ -65,6 +66,7 @@ router.get('/me/viajes', requireAuth, h(async (req, res) => {
       departureAt: f.salida_en,
       finishedAt: f.finalizado_en,
       calculatedAt: f.calculado_en,
+      driver: { id: f.conductor_id, fullName: f.conductor_nombre, photoUrl: urlFoto(f.conductor_id, f.conductor_foto) },
     })),
     page,
     pageSize: TAM_PAGINA,

@@ -14,6 +14,7 @@
  */
 
 const { ValidationError } = require('../../shared/errors');
+const { urlFoto } = require('../../shared/fotos');
 
 const TIPO_CLIENTE_A_BD = Object.freeze({ alumno: 'estudiante', maestro: 'docente' });
 const TIPO_BD_A_CLIENTE = Object.freeze({ estudiante: 'alumno', docente: 'maestro' });
@@ -119,6 +120,7 @@ function toUsuarioDTO(row) {
     role: row.rol === 'admin' ? 'admin' : 'user',
     status: row.estado === 'activo' ? 'active' : row.estado === 'pendiente' ? 'pending' : 'suspended',
     emailVerified: row.verificado_en !== null,
+    photoUrl: urlFoto(row.id, row.foto_storage_key),
     createdAt: row.creado_en,
     ...(row.calificacion_promedio !== undefined && {
       ratingAverage: row.calificacion_promedio,

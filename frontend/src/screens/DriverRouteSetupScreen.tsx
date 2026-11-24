@@ -29,7 +29,6 @@ export const DriverRouteSetupScreen: React.FC<DriverRouteSetupScreenProps> = ({
 }) => {
   const existingRoute = getDriverRoute();
 
-  // Estados del formulario
   const [direction, setDirection] = useState<TripDirection>(
     existingRoute?.direction || 'to_campus'
   );
@@ -115,13 +114,11 @@ export const DriverRouteSetupScreen: React.FC<DriverRouteSetupScreenProps> = ({
       <Header subtitle="Configuración Inicial de Ruta" />
 
       <View style={styles.body}>
-        {/* Barra superior con volver */}
         <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.8}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={THEME.colors.primary} />
           <Text style={styles.backBtnText}>Volver</Text>
         </TouchableOpacity>
 
-        {/* Banner Explicativo */}
         <View style={styles.infoCard}>
           <View style={styles.iconCircle}>
             <MaterialCommunityIcons name="map-marker-distance" size={26} color={THEME.colors.primary} />
@@ -277,7 +274,6 @@ export const DriverRouteSetupScreen: React.FC<DriverRouteSetupScreenProps> = ({
           />
         </View>
 
-        {/* Botón continuar */}
         <TouchableOpacity
           style={styles.continueBtn}
           onPress={handleContinue}

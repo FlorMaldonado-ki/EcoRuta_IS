@@ -11,13 +11,16 @@
  *   POST  /api/auth/reset-password        { token, password, confirmPassword } (JSON o formulario)
  *   GET   /api/me                         perfil propio
  *   PATCH /api/me                         { fullName?, career?, department?, phone? }
+ *   PUT   /api/me/foto                    multipart: "photo" (PNG/JPG, 5 MB) → perfil
+ *   GET   /api/fotos/:usuarioId/:firma     imagen (URL firmada que viene en photoUrl)
  *
  * Cerrar sesión (RF-03): la API es stateless; el cliente descarta el token.
  */
 const { Router } = require('express');
 const service = require('./auth.service');
 const { firmarToken, requireAuth } = require('../../middlewares/auth');
-const { documentoRegistro } = require('../../middlewares/upload');
+const { documentoRegistro, fotoPerfil } = require('../../middlewares/upload');
+const { esUuid } = require('../../shared/validacion');
 const limites = require('../../middlewares/rateLimits');
 const paginas = require('../../shared/paginas');
 const { ValidationError, AppError } = require('../../shared/errors');
@@ -76,5 +79,18 @@ const me = Router();
 me.use(requireAuth);
 me.get('/', h(async (req, res) => res.json(await service.obtenerPerfil(req.user.id))));
 me.patch('/', h(async (req, res) => res.json(await service.actualizarPerfil(req.user.id, req.body))));
+me.put('/foto', fotoPerfil, h(async (req, res) => res.json(await service.actualizarFoto(req.user.id, req.file))));
 
-module.exports = { auth, me };
+const fotos = Router();
+fotos.get('/:usuarioId/:firma', h(async (req, res) => {
+  const foto = esUuid(req.params.usuarioId) ? await service.leerFoto(req.params.usuarioId, req.params.firma) : null;
+  if (!foto) throw new AppError(404, 'FOTO_NO_ENCONTRADA', 'No encontramos esa foto.');
+  res.set({
+    'Content-Type': foto.mime,
+    'Cache-Control': 'private, max-age=86400',
+    'Cross-Origin-Resource-Policy': 'cross-origin', // Expo Web la carga desde otro origen
+  });
+  res.send(foto.contenido);
+}));
+
+module.exports = { auth, me, fotos };

@@ -61,7 +61,6 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
   onSelectTrip,
   onBackToHome,
 }) => {
-  // Estados de filtros
   const [selectedDirection, setSelectedDirection] = useState<'all' | TripDirection>('all');
   const [selectedCampus, setSelectedCampus] = useState<string>('all');
   const [selectedDateFilter, setSelectedDateFilter] = useState<DateFilter>('week');
@@ -71,7 +70,6 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
   const [minSeats, setMinSeats] = useState<number>(1);
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
 
-  // Estados de carga y resultados
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -138,7 +136,6 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
     [buildFilters]
   );
 
-  // Ejecutar búsqueda cada vez que cambien los filtros
   useEffect(() => {
     fetchTrips('load');
   }, [fetchTrips]);
@@ -163,7 +160,6 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
 
   const listHeader = (
     <View>
-      {/* Pestañas rápidas de sentido */}
       <View style={styles.directionTabs}>
         <TouchableOpacity
           style={[styles.dirTab, selectedDirection === 'all' && styles.dirTabActive]}
@@ -220,7 +216,6 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
             ))}
           </ScrollView>
 
-          {/* Rango de Horario de Salida */}
           <View style={styles.filterSubSection}>
             <Text style={styles.filterSubLabel}>Horario de salida:</Text>
             <View style={styles.timeButtonsRow}>
@@ -238,7 +233,6 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
             </View>
           </View>
 
-          {/* Puntos de referencia oficiales del TecNM (Campus 1, Campus 2, Metalurgia) */}
           <SelectModalField
             label="Punto del campus / Destino"
             placeholder="Selecciona Campus 1, 2 o Metalurgia"
@@ -258,7 +252,6 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
             onSelect={(val) => setSelectedZone(val === 'Cualquier zona' ? 'all' : val)}
           />
 
-          {/* Radio de proximidad */}
           {selectedZone !== 'all' && (
             <View style={styles.radiusContainer}>
               <Text style={styles.filterSubLabel}>Radio de cercanía máximo:</Text>
@@ -278,7 +271,6 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
             </View>
           )}
 
-          {/* Lugares mínimos requeridos */}
           <View style={styles.seatsFilterRow}>
             <Text style={styles.filterSubLabel}>Lugares requeridos:</Text>
             <View style={styles.seatsCountRow}>
@@ -303,7 +295,6 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
         </View>
       )}
 
-      {/* Encabezado de resultados */}
       <View style={styles.resultsHeader}>
         <Text style={styles.resultsCount}>
           {isLoading
@@ -319,7 +310,6 @@ export const PassengerSearchScreen: React.FC<PassengerSearchScreenProps> = ({
     <View style={styles.container}>
       <Header subtitle="Búsqueda de Viajes" />
 
-      {/* Barra superior de regreso y filtros */}
       <View style={styles.topNavigation}>
         <TouchableOpacity style={styles.backButton} onPress={onBackToHome} activeOpacity={0.7}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={THEME.colors.primary} />

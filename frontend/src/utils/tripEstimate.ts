@@ -1,8 +1,8 @@
 import type { TripDTO } from '../types/api';
 
 /**
- * RF-10 · Texto de la estimación calculada por el backend (ruteo.estimar).
- * fuente 'osrm' = ruta real por calles; 'haversine' = línea recta × 1.3 a 25 km/h (respaldo RNF-29).
+ * Texto de la estimación calculada por el backend (ruteo.estimar).
+ * fuente 'osrm' = ruta real por calles; 'haversine' = línea recta × 1.3 a 25 km/h.
  */
 type Estimate = Pick<TripDTO, 'distanceKm' | 'durationMin' | 'distanceSource'>;
 

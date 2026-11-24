@@ -9,6 +9,7 @@ const { pool, withTransaction } = require('../../config/db');
 const { AppError, ValidationError } = require('../../shared/errors');
 const { nuevoToken, sha256 } = require('../../shared/tokens');
 const storage = require('../../shared/storage');
+const fotos = require('../../shared/fotos');
 const mailer = require('../../shared/mailer');
 const catalogos = require('../catalogos/catalogos.service');
 const repo = require('./auth.repository');
@@ -193,7 +194,31 @@ async function actualizarPerfil(usuarioId, body) {
   return obtenerPerfil(usuarioId);
 }
 
+// ── Foto de perfil (cámara) ─────────────────────────────────────────────────
+async function actualizarFoto(usuarioId, file) {
+  const key = await storage.guardar(file.buffer, { carpeta: 'fotos', mime: file.mimetype });
+  let anterior;
+  try {
+    anterior = await repo.actualizarFoto(pool, usuarioId, key);
+  } catch (err) {
+    await storage.eliminar(key);
+    throw err;
+  }
+  if (anterior) await storage.eliminar(anterior);
+  return obtenerPerfil(usuarioId);
+}
+
+/** Contenido de la foto si la firma corresponde a la foto vigente; null si no. */
+async function leerFoto(usuarioId, firma) {
+  const key = await repo.claveFoto(pool, usuarioId);
+  if (!fotos.firmaValida(usuarioId, key, firma)) return null;
+  const contenido = await storage.leer(key);
+  if (!contenido) return null;
+  return { contenido, mime: key.endsWith('.png') ? 'image/png' : 'image/jpeg' };
+}
+
 module.exports = {
+  actualizarFoto, leerFoto,
   registrar, verificarCorreo, reenviarVerificacion, iniciarSesion,
   solicitarRecuperacion, tokenRecuperacionValido, restablecerContrasena,
   obtenerPerfil, actualizarPerfil,

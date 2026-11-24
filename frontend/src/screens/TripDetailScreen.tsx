@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Header } from '../components/Header';
@@ -16,6 +15,7 @@ import { THEME } from '../constants/theme';
 import { requestSeat, cancelReservation, getTripById, errorMessage as apiErrorMessage, canFinishTrip, canEditTrip } from '../services/tripService';
 import { useFinishTrip } from '../hooks/useFinishTrip';
 import { TripImpactBadge } from '../components/TripImpactBadge';
+import { DriverAvatar } from '../components/DriverAvatar';
 import { confirmAction } from '../utils/notify';
 import { useNotifications } from '../hooks/useNotifications';
 import { formatDistanceKm, formatDurationMin, estimateSourceLabel } from '../utils/tripEstimate';
@@ -36,7 +36,7 @@ interface TripDetailScreenProps {
   currentUser: UserDTO;
   onBack: () => void;
   onTripUpdated: (updatedTrip: TripDTO) => void;
-  /** Conductor: abrir "Editar viaje" (RF-13). */
+  /** Conductor: abrir "Editar viaje". */
   onEditTrip?: (trip: TripDTO) => void;
 }
 
@@ -48,7 +48,7 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
   onEditTrip,
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // SCRUM-61 · RF-19: al finalizar, el detalle muestra el viaje ya finalizado con su CO₂.
+  // Al finalizar, el detalle muestra el viaje ya finalizado con su CO₂.
   const { requestFinish, finishingId } = useFinishTrip(currentUser, (r) => onTripUpdated(r.trip));
   const { showAlert } = useNotifications();
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -57,7 +57,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
   const [proposedName, setProposedName] = useState('');
   const [proposedNote, setProposedNote] = useState('');
 
-  // Formato de fechas y horas
   const depDate = new Date(trip.departureAt);
   const timeFormatted = depDate.toLocaleTimeString('es-MX', {
     hour: '2-digit',
@@ -70,7 +69,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
     month: 'long',
   });
 
-  // Hora estimada de llegada
   let arrivalFormatted: string | null = null;
   if (trip.estimatedArrivalAt) {
     const arrDate = new Date(trip.estimatedArrivalAt);
@@ -102,7 +100,7 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
   const isExpired = new Date(trip.departureAt).getTime() <= Date.now();
   const isUnavailable = trip.status !== 'published';
 
-  // Privacidad de placas (RNF-12): solo visible para el conductor o con reserva aceptada
+  // Privacidad de placas: solo visible para el conductor o con reserva aceptada
   const canViewPlates = isDriver || isAccepted;
 
   // Lista de espera: solicitud pendiente en un viaje que ya se llenó.
@@ -213,7 +211,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Header subtitle="Detalles del Viaje" />
 
-      {/* Botón de regreso */}
       <View style={styles.navBar}>
         <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={THEME.colors.primary} />
@@ -221,7 +218,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Banner de mensajes de éxito o error */}
       {successMessage && (
         <View style={styles.successBanner}>
           <MaterialCommunityIcons name="check-circle" size={20} color={THEME.colors.success} />
@@ -236,23 +232,9 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
         </View>
       )}
 
-      {/* Tarjeta de Información del Conductor */}
       <View style={styles.sectionCard}>
         <View style={styles.driverHeader}>
-          {trip.driver.photoUrl ? (
-            <Image source={{ uri: trip.driver.photoUrl }} style={styles.driverPhoto} />
-          ) : (
-            <View style={styles.driverAvatarFallback}>
-              <Text style={styles.avatarInitials}>
-                {trip.driver.fullName
-                  .split(' ')
-                  .map((n) => n[0])
-                  .slice(0, 2)
-                  .join('')
-                  .toUpperCase()}
-              </Text>
-            </View>
-          )}
+          <DriverAvatar fullName={trip.driver.fullName} photoUrl={trip.driver.photoUrl} size={60} />
 
           <View style={styles.driverInfoText}>
             <View style={styles.nameBadgeRow}>
@@ -268,7 +250,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
           </View>
         </View>
 
-        {/* Información del Vehículo */}
         <View style={styles.vehicleBox}>
           <MaterialCommunityIcons name="car-info" size={20} color={THEME.colors.primary} />
           <View style={styles.vehicleDetails}>
@@ -293,12 +274,10 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
         </View>
       </View>
 
-      {/* Tarjeta de Recorrido y Horarios */}
       <View style={styles.sectionCard}>
         <Text style={styles.sectionTitle}>Itinerario del Viaje</Text>
 
         <View style={styles.itineraryGrid}>
-          {/* Salida */}
           <View style={styles.itineraryItem}>
             <MaterialCommunityIcons name="clock-start" size={20} color={THEME.colors.primary} />
             <View>
@@ -308,7 +287,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
             </View>
           </View>
 
-          {/* Llegada estimada */}
           {arrivalFormatted && (
             <View style={styles.itineraryItem}>
               <MaterialCommunityIcons name="clock-check-outline" size={20} color={THEME.colors.success} />
@@ -321,7 +299,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
           )}
         </View>
 
-        {/* Distancia y duración estimadas (RF-10) */}
         <View style={styles.estimateBox}>
           <View style={styles.estimateItem}>
             <MaterialCommunityIcons name="map-marker-distance" size={18} color={THEME.colors.primary} />
@@ -345,7 +322,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
             : ''}
         </Text>
 
-        {/* Origen y Destino */}
         <View style={styles.placesContainer}>
           <View style={styles.placeRow}>
             <View style={[styles.placeMarker, { backgroundColor: THEME.colors.success }]} />
@@ -368,7 +344,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
           </View>
         </View>
 
-        {/* Lugares disponibles */}
         <View style={styles.seatsContainer}>
           <MaterialCommunityIcons name="seat-passenger" size={20} color={THEME.colors.primary} />
           <Text style={styles.seatsInfoText}>
@@ -377,7 +352,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
         </View>
       </View>
 
-      {/* Mapa interactivo con Leaflet, OpenStreetMap y OSRM */}
       <View style={styles.sectionCard}>
         <View style={styles.mapTitleRow}>
           <MaterialCommunityIcons name="map-legend" size={20} color={THEME.colors.primary} />
@@ -521,7 +495,6 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
           </View>
         )}
 
-        {/* Notas del conductor */}
         {trip.notes && (
           <View style={styles.notesBox}>
             <MaterialCommunityIcons name="information-outline" size={18} color={THEME.colors.accentDark} />
@@ -533,9 +506,7 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
         )}
       </View>
 
-      {/* ACCIONES Y BOTÓN DE SOLICITUD */}
       <View style={styles.actionCard}>
-        {/* SCRUM-64 · RF-21: CO₂ que ahorró el viaje finalizado */}
         {trip.status === 'finished' && trip.impact ? (
           <TripImpactBadge impact={trip.impact} asPassenger={!isDriver} />
         ) : null}
@@ -918,28 +889,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-  },
-  driverPhoto: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 2,
-    borderColor: THEME.colors.accent,
-  },
-  driverAvatarFallback: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: THEME.colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: THEME.colors.accent,
-  },
-  avatarInitials: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '800',
   },
   driverInfoText: {
     flex: 1,
