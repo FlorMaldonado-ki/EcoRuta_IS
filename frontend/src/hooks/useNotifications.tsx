@@ -132,7 +132,10 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
             tone: 'critical',
             title: `Tienes ${criticalUnread.length} avisos importantes sin leer`,
             message: criticalUnread.map((n) => `• ${n.title}`).join('\n'),
-            section: 'myTrips',
+            // Si todos son de la misma sección (p. ej. documentos) se lleva ahí; si no, a la bandeja.
+            section: new Set(criticalUnread.map((n) => NOTIFICATION_META[n.type]?.section)).size === 1
+              ? NOTIFICATION_META[criticalUnread[0].type]?.section
+              : undefined,
           }]);
         }
         return;
@@ -242,7 +245,9 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
   const badges = useMemo<Record<NotifSection, SectionBadge>>(() => {
     const myTripsUnread = items.filter((n) => !n.read && SECTION_TYPES.myTrips.includes(n.type));
+    const docsUnread = items.filter((n) => !n.read && SECTION_TYPES.documents.includes(n.type));
     return {
+      documents: { count: docsUnread.length, critical: docsUnread.some((n) => n.critical) },
       search: { count: summary.newTrips, critical: false },
       myTrips: { count: myTripsUnread.length, critical: myTripsUnread.some((n) => n.critical) },
       requests: { count: summary.pendingRequests, critical: false },

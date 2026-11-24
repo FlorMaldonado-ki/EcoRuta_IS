@@ -20,6 +20,7 @@ import {
 } from '../services/tripService';
 import type { ReservationDTO, UserDTO } from '../types/api';
 import { useNotifications } from '../hooks/useNotifications';
+import { ReportUserModal } from '../components/trust/ReportUserModal';
 
 interface DriverRequestsScreenProps {
   currentUser: UserDTO;
@@ -46,6 +47,8 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
   const [feedbackMessage, setFeedbackMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
+  // Solicitud cuyo pasajero se está reportando (RF-28)
+  const [reportTarget, setReportTarget] = useState<ReservationDTO | null>(null);
 
   const loadRequests = async () => {
     setIsLoading(true);
@@ -333,6 +336,19 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
                   </View>
                 ) : null}
 
+                {res.trip ? (
+                  <TouchableOpacity
+                    style={styles.reportLink}
+                    onPress={() => setReportTarget(res)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Reportar a ${res.passengerName}`}
+                  >
+                    <MaterialCommunityIcons name="flag-outline" size={16} color={THEME.colors.error} />
+                    <Text style={styles.reportLinkText}>Reportar pasajero</Text>
+                  </TouchableOpacity>
+                ) : null}
+
                 {(res.status === 'pendiente' || res.status === 'solicitada') && (
                   <View style={styles.actionButtonsRow}>
                     <TouchableOpacity
@@ -381,11 +397,42 @@ export const DriverRequestsScreen: React.FC<DriverRequestsScreenProps> = ({
           })
         )}
       </View>
+
+      <ReportUserModal
+        visible={!!reportTarget}
+        tripId={reportTarget?.tripId ?? ''}
+        trip={reportTarget?.trip ? {
+          origin: reportTarget.trip.origin.text,
+          destination: reportTarget.trip.destination.text,
+          departureAt: reportTarget.trip.departureAt,
+        } : null}
+        user={reportTarget ? {
+          id: reportTarget.passengerId,
+          fullName: reportTarget.passengerName,
+          photoUrl: reportTarget.passengerPhoto ?? null,
+          affiliation: reportTarget.passengerAffiliation ?? null,
+        } : null}
+        role="passenger"
+        onClose={() => setReportTarget(null)}
+      />
     </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
+  reportLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-end',
+    minHeight: 44,
+    paddingHorizontal: 8,
+  },
+  reportLinkText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.colors.error,
+  },
   joinBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',

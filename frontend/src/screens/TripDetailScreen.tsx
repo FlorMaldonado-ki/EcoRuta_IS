@@ -15,6 +15,7 @@ import { THEME } from '../constants/theme';
 import { requestSeat, cancelReservation, getTripById, errorMessage as apiErrorMessage, canFinishTrip, canEditTrip } from '../services/tripService';
 import { useFinishTrip } from '../hooks/useFinishTrip';
 import { TripImpactBadge } from '../components/TripImpactBadge';
+import { TripPeopleSection } from '../components/trust/TripPeopleSection';
 import { DriverAvatar } from '../components/DriverAvatar';
 import { confirmAction } from '../utils/notify';
 import { useNotifications } from '../hooks/useNotifications';
@@ -687,6 +688,9 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
           </View>
         )}
       </View>
+
+      {/* Calificar y reportar a las personas del viaje (módulo 3.1.5) */}
+      <TripPeopleSection trip={trip} isDriver={isDriver} isAccepted={isAccepted} />
     </ScrollView>
   );
 };

@@ -215,7 +215,9 @@ export type NotificationType =
   | 'lugar_cancelado'
   | 'viaje_cancelado'
   | 'viaje_lleno'       // lista de espera: el viaje se llenó
-  | 'lugar_liberado';   // lista de espera: se liberó un lugar
+  | 'lugar_liberado'    // lista de espera: se liberó un lugar
+  | 'documento_aprobado'   // el administrador aceptó tu documento
+  | 'documento_rechazado'; // el administrador lo rechazó (con comentario)
 
 export interface NotificationItem {
   id: string;
