@@ -11,8 +11,11 @@ const TIPOS = Object.freeze([
   'viaje_lleno', 'lugar_liberado',
 ]);
 
+/** Avisos de la revisión de documentos (no dependen de un viaje). */
+const TIPOS_DOCUMENTO = Object.freeze(['documento_aprobado', 'documento_rechazado']);
+
 /** Avisos que el cliente debe destacar (cancelaciones y rechazos). */
-const TIPOS_CRITICOS = Object.freeze(['viaje_cancelado', 'lugar_cancelado', 'solicitud_cancelada', 'solicitud_rechazada']);
+const TIPOS_CRITICOS = Object.freeze(['viaje_cancelado', 'lugar_cancelado', 'solicitud_cancelada', 'solicitud_rechazada', 'documento_rechazado']);
 
 const formatoSalida = new Intl.DateTimeFormat('es-MX', {
   timeZone: 'America/Mexico_City',
@@ -83,6 +86,24 @@ function componer(tipo, ctx, { tardia = false } = {}) {
   return { titulo: recortar(titulo, 120), mensaje: recortar(mensaje, 400) };
 }
 
+/**
+ * Aviso de la revisión de un documento.
+ * @param {'documento_aprobado'|'documento_rechazado'} tipo
+ * @param {{ tipoDocumento: string, motivo?: string|null }} ctx
+ */
+function componerDocumento(tipo, { tipoDocumento, motivo = null }) {
+  if (tipo === 'documento_aprobado') {
+    return { titulo: 'Documento aceptado', mensaje: recortar(`El administrador aceptó tu ${tipoDocumento}.`, 400) };
+  }
+  if (tipo === 'documento_rechazado') {
+    return {
+      titulo: '⚠ Documento rechazado',
+      mensaje: recortar(`El administrador rechazó tu ${tipoDocumento}. Motivo: ${motivo}. Puedes enviar uno nuevo en Mi perfil → Mis documentos.`, 400),
+    };
+  }
+  throw new Error(`Tipo de notificación desconocido: ${tipo}`);
+}
+
 function toNotificacionDTO(row) {
   return {
     id: row.id,
@@ -97,4 +118,4 @@ function toNotificacionDTO(row) {
   };
 }
 
-module.exports = { componer, toNotificacionDTO, describirViaje, TIPOS, TIPOS_CRITICOS };
+module.exports = { componer, componerDocumento, toNotificacionDTO, describirViaje, TIPOS, TIPOS_DOCUMENTO, TIPOS_CRITICOS };

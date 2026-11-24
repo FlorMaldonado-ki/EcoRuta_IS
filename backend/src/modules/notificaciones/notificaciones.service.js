@@ -49,8 +49,8 @@ async function marcarLeida(usuarioId, id) {
 async function marcarTodas(usuarioId, body = {}) {
   let tipos = null;
   if (body && body.types !== undefined) {
-    if (!Array.isArray(body.types) || body.types.length === 0 || body.types.some((t) => !mapper.TIPOS.includes(t))) {
-      throw new ValidationError({ types: `Usa una lista con: ${mapper.TIPOS.join(', ')}.` });
+    if (!Array.isArray(body.types) || body.types.length === 0 || body.types.some((t) => ![...mapper.TIPOS, ...mapper.TIPOS_DOCUMENTO].includes(t))) {
+      throw new ValidationError({ types: `Usa una lista con: ${[...mapper.TIPOS, ...mapper.TIPOS_DOCUMENTO].join(', ')}.` });
     }
     tipos = body.types;
   }
@@ -127,4 +127,14 @@ const alViajeLleno = (viajeId) => avisarEnEspera('viaje_lleno', viajeId);
 /** Se liberó un lugar en un viaje lleno → avisar a la lista de espera. */
 const alLugarLiberado = (viajeId) => avisarEnEspera('lugar_liberado', viajeId);
 
-module.exports = { listar, marcarLeida, marcarTodas, marcarViajesVistos, alViajeLleno, alLugarLiberado, alSolicitar, alResponder, alCancelarReserva, alCancelarViaje };
+/**
+ * El administrador revisó un documento → aviso al dueño.
+ * @param {{ usuarioId: string, aprobado: boolean, tipoDocumento: string, motivo?: string|null }} d
+ */
+const alRevisarDocumento = (d) => seguro('documento_revisado', async () => {
+  const tipo = d.aprobado ? 'documento_aprobado' : 'documento_rechazado';
+  const { titulo, mensaje } = mapper.componerDocumento(tipo, d);
+  await repo.insertarVarias(pool, [{ usuarioId: d.usuarioId, tipo, titulo, mensaje }]);
+});
+
+module.exports = { alRevisarDocumento, listar, marcarLeida, marcarTodas, marcarViajesVistos, alViajeLleno, alLugarLiberado, alSolicitar, alResponder, alCancelarReserva, alCancelarViaje };

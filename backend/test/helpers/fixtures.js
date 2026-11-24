@@ -62,6 +62,22 @@ function crearContexto() {
     if (!usuarios.length) return;
     const ids = usuarios;
     await pool.query(`DELETE FROM notificacion WHERE usuario_id = ANY($1)`, [ids]);
+    // Calificaciones: el trigger solo permite borrarlas con la marca de limpieza de pruebas.
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`SET LOCAL ecoruta.limpieza_pruebas = 'on'`);
+      await c.query('DELETE FROM calificacion WHERE evaluador_id = ANY($1) OR evaluado_id = ANY($1)', [ids]);
+      await c.query('COMMIT');
+    } catch (err) {
+      await c.query('ROLLBACK');
+      throw err;
+    } finally {
+      c.release();
+    }
+    await pool.query('DELETE FROM reporte WHERE reportante_id = ANY($1) OR usuario_reportado_id = ANY($1)', [ids]);
+    await pool.query('DELETE FROM recordatorio_calificacion WHERE usuario_id = ANY($1)', [ids]);
+    await pool.query('DELETE FROM documento_usuario WHERE usuario_id = ANY($1)', [ids]);
     await pool.query(`DELETE FROM reserva WHERE pasajero_id = ANY($1) OR viaje_id IN (SELECT id FROM viaje WHERE conductor_id = ANY($1))`, [ids]);
     await pool.query(`DELETE FROM impacto_viaje WHERE viaje_id IN (SELECT id FROM viaje WHERE conductor_id = ANY($1))`, [ids]);
     await pool.query('DELETE FROM viaje WHERE conductor_id = ANY($1)', [ids]);

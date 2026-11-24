@@ -22,6 +22,7 @@ const ERRORES_BD = {
   SIN_ASIENTOS: [409, 'Ya no quedan lugares en este viaje.'],
   NO_PARTICIPANTE: [403, 'Solo quienes participaron en el viaje pueden calificar.'],
   VIAJE_NO_FINALIZADO: [409, 'El viaje aún no ha finalizado.'],
+  CALIFICACION_DEFINITIVA: [409, 'La calificación es definitiva: no se puede modificar ni eliminar.'],
 };
 
 // Restricciones UNIQUE (SQLSTATE 23505) → [código, mensaje, campo].
@@ -30,6 +31,9 @@ const DUPLICADOS = {
   uq_vehiculo_usuario_placas: ['PLACAS_REGISTRADAS', 'Ya registraste un vehículo con esas placas.', 'plates'],
   uq_reserva_viaje_pasajero_vigente: ['RESERVA_DUPLICADA', 'Ya tienes una solicitud en este viaje.'],
   uq_impacto_viaje: ['IMPACTO_YA_REGISTRADO', 'El impacto de este viaje ya se registró.'],
+  uq_calificacion: ['YA_CALIFICADO', 'Ya calificaste a esta persona en este viaje. La calificación es definitiva.'],
+  uq_reporte_por_viaje: ['REPORTE_DUPLICADO', 'Ya reportaste a esta persona por este viaje. El equipo de administración lo está revisando.'],
+  uq_documento_vigente: ['DOCUMENTO_EN_REVISION', 'Ya tienes un documento en revisión o aceptado.'],
 };
 
 // eslint-disable-next-line no-unused-vars

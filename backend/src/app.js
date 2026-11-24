@@ -18,6 +18,10 @@ const { vehiculos, misVehiculos, catalogoVehiculos } = require('./modules/vehicu
 const { viajes, misViajes } = require('./modules/viajes/viajes.routes');
 const { porViaje: reservasPorViaje, reservas } = require('./modules/reservas/reservas.routes');
 const { misNotificaciones } = require('./modules/notificaciones/notificaciones.routes');
+const {
+  participantesViaje, calificaciones, misCalificaciones, reportes, contactoEmergencia, misDocumentos, archivos,
+} = require('./modules/confianza/confianza.routes');
+const { admin } = require('./modules/admin/admin.routes');
 
 const app = express();
 
@@ -62,16 +66,24 @@ app.use('/api/auth', auth);
 app.use('/api/me/vehiculos', misVehiculos);
 app.use('/api/me/viajes', misViajes);
 app.use('/api/me/notificaciones', misNotificaciones);
+app.use('/api/me/calificaciones', misCalificaciones);
+app.use('/api/me/contacto-emergencia', contactoEmergencia);
+app.use('/api/me/documentos', misDocumentos);
 app.use('/api/me', me);
 app.use('/api/fotos', fotos);
 app.use('/api/vehiculos', vehiculos);
 app.use('/api/viajes/:viajeId/reservas', reservasPorViaje);
+app.use('/api/viajes/:viajeId/participantes', participantesViaje);
 app.use('/api/viajes', viajes);
 app.use('/api/reservas', reservas);
 app.use('/api/catalogos/vehiculos', catalogoVehiculos);
 app.use('/api/catalogos', catalogos);
 app.use('/api/impacto', impacto);
 app.use('/api/parametros', parametros);
+app.use('/api/calificaciones', calificaciones);
+app.use('/api/reportes', reportes);
+app.use('/api/archivos', archivos);
+app.use('/api/admin', admin);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -44,6 +44,22 @@ function documentoRegistro(req, res, next) {
   });
 }
 
+/** Reenvío de un documento rechazado (multipart, campo "document"): PDF, PNG o JPG de hasta 10 MB. */
+function documentoUsuario(req, res, next) {
+  recibir(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') return next(new ValidationError({ document: 'El archivo excede 10 MB.' }));
+      if (err.code === 'LIMIT_UNEXPECTED_FILE') return next(new ValidationError({ document: 'Envía un solo archivo en el campo "document".' }));
+      return next(err);
+    }
+    if (!req.file) return next(new ValidationError({ document: 'Adjunta el documento (PDF, PNG o JPG).' }));
+    const real = detectarMime(req.file.buffer);
+    if (!real) return next(new ValidationError({ document: 'Formatos soportados: PDF, PNG, JPG.' }));
+    req.file.mimetype = real;
+    next();
+  });
+}
+
 const MAX_FOTO_BYTES = 5 * 1024 * 1024;
 
 const recibirFoto = multer({
@@ -67,4 +83,4 @@ function fotoPerfil(req, res, next) {
   });
 }
 
-module.exports = { documentoRegistro, fotoPerfil, detectarMime };
+module.exports = { documentoRegistro, documentoUsuario, fotoPerfil, detectarMime };
